@@ -138,3 +138,29 @@ header{padding:0 13px}
 img {
   max-width: 100%;
 }
+/* My Profile picture - small circular avatar */
+.profile-avatar-editor {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.profile-avatar-preview,
+.profile-avatar-placeholder {
+  width: 90px !important;
+  height: 90px !important;
+  min-width: 90px !important;
+  max-width: 90px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  flex: 0 0 90px;
+  overflow: hidden;
+}
+
+.profile-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
