@@ -11,6 +11,7 @@ export const supabase = url && anon ? createClient(url, anon) : null
 const menu = [
   ['Home', '⌂'],
   ['Messages', '✉'],
+  ['Clan Chat', '💬'],
   ['Friends', '♙'],
   ['Minigames', '🎮'],
   ['Leaderboard', '🏆'],
@@ -40,6 +41,12 @@ function App() {
   const [messageText, setMessageText] = React.useState('')
   const [loadingMessages, setLoadingMessages] = React.useState(false)
   const [sendingMessage, setSendingMessage] = React.useState(false)
+
+  // Public RLM clan chat
+  const [clanMessages, setClanMessages] = React.useState([])
+  const [clanMessageText, setClanMessageText] = React.useState('')
+  const [loadingClanChat, setLoadingClanChat] = React.useState(false)
+  const [sendingClanMessage, setSendingClanMessage] = React.useState(false)
 
   React.useEffect(() => {
     if (!supabase) return
@@ -203,6 +210,103 @@ function App() {
       cancelled = true
     }
   }, [session, section])
+
+  // Load the shared RLM clan chat and listen for new messages
+  React.useEffect(() => {
+    if (!session || !supabase || section !== 'Clan Chat') {
+      setClanMessages([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadClanMessages() {
+      setLoadingClanChat(true)
+
+      const { data, error } = await supabase
+        .from('clan_chat_messages')
+        .select('id, sender_id, body, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (cancelled) return
+
+      if (error) {
+        setStatus('Could not load clan chat: ' + error.message)
+        setLoadingClanChat(false)
+        return
+      }
+
+      const rows = data || []
+      const userIds = [...new Set(rows.map(item => item.sender_id))]
+      let profileMap = {}
+
+      if (userIds.length > 0) {
+        const { data: people, error: peopleError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name')
+          .in('id', userIds)
+
+        if (peopleError) {
+          setStatus('Could not load chat names: ' + peopleError.message)
+        } else {
+          profileMap = Object.fromEntries(
+            (people || []).map(person => [person.id, person])
+          )
+        }
+      }
+
+      if (!cancelled) {
+        setClanMessages(rows.reverse().map(item => ({
+          ...item,
+          sender: profileMap[item.sender_id] || null
+        })))
+        setLoadingClanChat(false)
+      }
+    }
+
+    loadClanMessages()
+
+    const channel = supabase
+      .channel('rlm-public-clan-chat')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'clan_chat_messages' },
+        () => loadClanMessages()
+      )
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [session, section])
+
+  async function sendClanMessage(e) {
+    e.preventDefault()
+    const body = clanMessageText.trim()
+
+    if (!body || !session || !supabase) return
+    if (body.length > 1000) {
+      setStatus('Clan chat messages must be 1000 characters or fewer.')
+      return
+    }
+
+    setSendingClanMessage(true)
+    setStatus('')
+
+    const { error } = await supabase
+      .from('clan_chat_messages')
+      .insert({ sender_id: session.user.id, body })
+
+    if (error) {
+      setStatus('Message could not be sent: ' + error.message)
+    } else {
+      setClanMessageText('')
+    }
+
+    setSendingClanMessage(false)
+  }
 
   // Load messages and listen for new ones
   React.useEffect(() => {
@@ -667,6 +771,74 @@ function App() {
       </div>
     }
 
+    if (section === 'Clan Chat') {
+      if (!session) {
+        return <div className="panel">
+          <h2>💬 RLM Clan Chat</h2>
+          <p>Please sign in to join the clan chat.</p>
+        </div>
+      }
+
+      return <div className="panel">
+        <h2>💬 RLM Clan Chat</h2>
+        <p className="muted">
+          The shared chat for RLM Shell Shockers clan members. Everyone signed in can join the conversation.
+        </p>
+
+        <div
+          style={{
+            minHeight: '300px',
+            maxHeight: '500px',
+            overflowY: 'auto',
+            padding: '14px',
+            marginBottom: '14px',
+            background: 'rgba(0,0,0,0.2)',
+            borderRadius: '12px'
+          }}
+        >
+          {loadingClanChat ? (
+            <p className="muted">Loading clan chat...</p>
+          ) : clanMessages.length === 0 ? (
+            <p className="muted">No messages yet. Be the first to say hello!</p>
+          ) : (
+            clanMessages.map(message => (
+              <div key={message.id} style={{ marginBottom: '14px', overflowWrap: 'anywhere' }}>
+                <strong style={{ color: '#c084fc' }}>
+                  {message.sender?.display_name || message.sender?.username || 'RLM member'}
+                </strong>
+                <small style={{ opacity: 0.55, marginLeft: '9px' }}>
+                  {new Date(message.created_at).toLocaleString([], {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                  })}
+                </small>
+                <div style={{ marginTop: '4px', whiteSpace: 'pre-wrap' }}>{message.body}</div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <form onSubmit={sendClanMessage}>
+          <label>
+            Message everyone
+            <textarea
+              rows="3"
+              maxLength="1000"
+              placeholder="Say something to the RLM clan..."
+              value={clanMessageText}
+              onChange={e => setClanMessageText(e.target.value)}
+            />
+          </label>
+          <button
+            className="primary"
+            disabled={sendingClanMessage || !clanMessageText.trim()}
+          >
+            {sendingClanMessage ? 'Sending...' : 'Send to clan'}
+          </button>
+        </form>
+        <p className="status">{status}</p>
+      </div>
+    }
+
     if (section === 'Friends') {
       return <div className="panel">
         <h2>♙ Friends</h2>
@@ -818,7 +990,7 @@ function App() {
 
           <div className="notice">
             <strong>RLM:</strong> New features are being built.
-            Private messaging is available between accepted friends.
+            Private messaging is available between accepted friends. Clan Chat is shared with all signed-in members.
           </div>
         </div>
       </main>
