@@ -203,9 +203,13 @@ function App() {
     loadFriends()
   }, [session, section, friendshipRows])
 
-  // Load conversations
+  // Load saved private conversations whenever the user signs in.
+  // This keeps the sidebar list available on every page, not just Messages.
   React.useEffect(() => {
-    if (!session || !supabase || section !== 'Messages') return
+    if (!session || !supabase) {
+      setConversations([])
+      return
+    }
     let cancelled = false
     async function loadConversations() {
       const userId = session.user.id
@@ -248,7 +252,7 @@ function App() {
     }
     loadConversations()
     return () => { cancelled = true }
-  }, [session, section])
+  }, [session])
 
   // Load shared clan chat and subscribe to new messages
   React.useEffect(() => {
@@ -375,6 +379,7 @@ function App() {
     setSection('Home')
     setSelectedConversation(null)
     setMessages([])
+    setConversations([])
   }
 
   async function saveDisplayName() {
@@ -409,6 +414,11 @@ function App() {
     setSelectedConversation(data)
     setSelectedName(friend.display_name || friend.username || 'RLM member')
     setMessageText('')
+    // Add it to the sidebar immediately; the saved membership also reloads on next sign-in.
+    setConversations(previous => {
+      const withoutDuplicate = previous.filter(item => item.conversationId !== data)
+      return [...withoutDuplicate, { conversationId: data, friend }]
+    })
     setStatus('')
     setSection('Messages')
   }
@@ -692,6 +702,27 @@ function App() {
       <div className="brand">RLM<span>.</span></div>
       <div className="caption">MAIN MENU</div>
       {menu.map(([name, icon]) => <button key={name} className={section === name ? 'nav active' : 'nav'} onClick={() => setSection(name)}>{icon} <span>{name}</span></button>)}
+
+      <div className="caption" style={{ marginTop: '22px' }}>PRIVATE CHATS</div>
+      {!session ? (
+        <div className="staff-note">Sign in to see your chats.</div>
+      ) : conversations.length === 0 ? (
+        <div className="staff-note">No private chats yet.</div>
+      ) : conversations.map(conversation => (
+        <button
+          key={conversation.conversationId}
+          className={selectedConversation === conversation.conversationId ? 'nav active' : 'nav'}
+          onClick={() => {
+            setSelectedConversation(conversation.conversationId)
+            setSelectedName(displayName(conversation.friend))
+            setSection('Messages')
+          }}
+          title={displayName(conversation.friend)}
+        >
+          ✉ <span>{displayName(conversation.friend)}</span>
+        </button>
+      ))}
+
       <div className="caption">STAFF</div>
       <div className="staff-note">Staff tools appear after a trusted owner assigns your role.</div>
       <div className="account">{session ? (profile?.display_name || session.user.email) : 'Guest'}<small>{session ? 'SIGNED IN' : 'NOT SIGNED IN'}</small></div>
