@@ -411,9 +411,13 @@ function App() {
     if (section === 'Home') {
       return <>
         <section className="hero">
-          <div className="eyebrow">WELCOME TO RLM</div>
-          <h1>Your universe.<br />Your community.</h1>
-          <p>Chat, compete, explore and level up.</p>
+          <div className="eyebrow">WELCOME TO THE CLAN</div>
+          <h1>RLM<br />SHELL SHOCKERS CLAN</h1>
+          <p>
+            The home of the RLM Shell Shockers clan.
+            Connect with clan members, chat with friends,
+            compete, and represent RLM.
+          </p>
         </section>
 
         {!session ? (
