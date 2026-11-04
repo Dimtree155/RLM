@@ -511,47 +511,50 @@ function App() {
 
     if (section === 'Messages') {
       if (!session) return <div className="panel"><h2>✉ Messages</h2><p>Please sign in to use messages.</p></div>
-      return <div className="panel">
-        <h2>✉ RLM Messages</h2>
-        <p className="muted">Private conversations with RLM members.</p>
-        <div className="grid">
-          <div className="panel">
-            <h3>Your conversations</h3>
-            {conversations.length === 0 ? <p className="muted">No conversations yet.</p> : conversations.map(conversation => (
-              <button key={conversation.conversationId} className="secondary" style={{ display: 'block', width: '100%', marginBottom: '8px' }}
+      return <div className="chat-page">
+        <div className="chat-heading">
+          <div><h2>✉ RLM Messages</h2><p className="muted">Your private conversations</p></div>
+        </div>
+        <div className="chat-layout">
+          <aside className="chat-conversation-list">
+            <div className="chat-section-label">DIRECT MESSAGES</div>
+            {conversations.length === 0 ? <p className="muted chat-empty-list">No conversations yet. Open a member's message icon on the Leaderboard to start one.</p> : conversations.map(conversation => (
+              <button key={conversation.conversationId}
+                className={`chat-conversation-button${selectedConversation === conversation.conversationId ? ' active' : ''}`}
                 onClick={() => {
                   setSelectedConversation(conversation.conversationId)
                   setSelectedName(displayName(conversation.friend))
-                }}>{displayName(conversation.friend)}</button>
+                }}>
+                <span className="chat-avatar">{displayName(conversation.friend).slice(0, 1).toUpperCase()}</span>
+                <span className="chat-conversation-name">{displayName(conversation.friend)}</span>
+              </button>
             ))}
-          </div>
-          <div className="panel">
+          </aside>
+          <section className="chat-main">
             {selectedConversation ? <>
-              <h3>Chat with {selectedName}</h3>
-              <div style={{ minHeight: '220px', maxHeight: '380px', overflowY: 'auto', padding: '10px', marginBottom: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '10px' }}>
-                {loadingMessages ? <p className="muted">Loading messages...</p> : messages.length === 0 ? <p className="muted">No messages yet. Say hello!</p> : messages.map(message => (
-                  <div key={message.id} style={{ marginBottom: '12px', textAlign: message.sender_id === session.user.id ? 'right' : 'left' }}>
-                    <span style={{ display: 'inline-block', padding: '10px 14px', borderRadius: '12px', background: message.sender_id === session.user.id ? '#7044c8' : '#29233b', maxWidth: '85%', overflowWrap: 'anywhere' }}>{message.body}</span>
-                    <small style={{ display: 'block', opacity: 0.6, marginTop: '3px' }}>
-                      {message.sender_id === session.user.id ? 'You' : selectedName} · {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </small>
+              <div className="chat-topbar">
+                <span className="chat-avatar">{selectedName.slice(0, 1).toUpperCase()}</span>
+                <div><strong>{selectedName}</strong><small>Private conversation</small></div>
+              </div>
+              <div className="chat-messages">
+                {loadingMessages ? <p className="muted chat-placeholder">Loading messages...</p> : messages.length === 0 ? <div className="chat-placeholder"><strong>This is the beginning of your conversation.</strong><span>Send a message to say hello!</span></div> : messages.map(message => (
+                  <div key={message.id} className={`chat-message-row${message.sender_id === session.user.id ? ' own' : ' incoming'}`}>
+                    <div className="chat-message-content">
+                      <div className="chat-message-meta">
+                        <strong>{message.sender_id === session.user.id ? 'You' : selectedName}</strong>
+                        <small>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+                      </div>
+                      <div className="chat-message-bubble">{message.body}</div>
+                    </div>
                   </div>
                 ))}
               </div>
-              <form onSubmit={sendMessage}>
-                <label>Your message
-                  <textarea rows="3" maxLength="2000" placeholder="Write a message..." value={messageText} onChange={e => setMessageText(e.target.value)} />
-                </label>
-                <button className="primary" disabled={sendingMessage || !messageText.trim()}>{sendingMessage ? 'Sending...' : 'Send message'}</button>
+              <form className="chat-composer" onSubmit={sendMessage}>
+                <input aria-label="Write a private message" maxLength="2000" placeholder={`Message @${selectedName}...`} value={messageText} onChange={e => setMessageText(e.target.value)} />
+                <button className="chat-send-button" type="submit" disabled={sendingMessage || !messageText.trim()} aria-label="Send message" title="Send message">{sendingMessage ? '…' : '➤'}</button>
               </form>
-            </> : <><h3>Choose a conversation</h3><p className="muted">Select a conversation or start one with a friend.</p></>}
-          </div>
-        </div>
-        <div className="panel">
-          <h3>Start a conversation</h3>
-          {friends.length === 0 ? <p className="muted">You don't have any accepted friends yet. Find members in the Leaderboard and send a friend request.</p> : friends.map(friend => (
-            <button key={friend.id} className="secondary" style={{ margin: '5px' }} onClick={() => startConversation(friend)}>Message {displayName(friend)}</button>
-          ))}
+            </> : <div className="chat-placeholder chat-no-selection"><strong>Select a conversation</strong><span>Choose a direct message on the left, or start one from the Leaderboard.</span></div>}
+          </section>
         </div>
         <p className="status">{status}</p>
       </div>
@@ -559,24 +562,35 @@ function App() {
 
     if (section === 'Clan Chat') {
       if (!session) return <div className="panel"><h2>💬 RLM Clan Chat</h2><p>Please sign in to join the clan chat.</p></div>
-      return <div className="panel">
-        <h2>💬 RLM Clan Chat</h2>
-        <p className="muted">The shared chat for RLM Shell Shockers clan members. Everyone signed in can join the conversation.</p>
-        <div style={{ minHeight: '300px', maxHeight: '500px', overflowY: 'auto', padding: '14px', marginBottom: '14px', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>
-          {loadingClanChat ? <p className="muted">Loading clan chat...</p> : clanMessages.length === 0 ? <p className="muted">No messages yet. Be the first to say hello!</p> : clanMessages.map(message => (
-            <div key={message.id} style={{ marginBottom: '14px', overflowWrap: 'anywhere' }}>
-              <strong style={{ color: '#c084fc' }}>{displayName(message.sender)}</strong>
-              <small style={{ opacity: 0.55, marginLeft: '9px' }}>{new Date(message.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
-              <div style={{ marginTop: '4px', whiteSpace: 'pre-wrap' }}>{message.body}</div>
-            </div>
-          ))}
+      return <div className="chat-page">
+        <div className="chat-heading">
+          <div><h2>💬 RLM Clan Chat</h2><p className="muted">The shared chat for RLM members</p></div>
+          <span className="chat-online-label">● Clan channel</span>
         </div>
-        <form onSubmit={sendClanMessage}>
-          <label>Message everyone
-            <textarea rows="3" maxLength="1000" placeholder="Say something to the RLM clan..." value={clanMessageText} onChange={e => setClanMessageText(e.target.value)} />
-          </label>
-          <button className="primary" disabled={sendingClanMessage || !clanMessageText.trim()}>{sendingClanMessage ? 'Sending...' : 'Send to clan'}</button>
-        </form>
+        <section className="chat-main clan-chat-main">
+          <div className="chat-topbar">
+            <span className="chat-channel-icon">#</span>
+            <div><strong>general</strong><small>Everyone signed in can join the conversation</small></div>
+          </div>
+          <div className="chat-messages clan-chat-messages">
+            {loadingClanChat ? <p className="muted chat-placeholder">Loading clan chat...</p> : clanMessages.length === 0 ? <div className="chat-placeholder"><strong>Welcome to the RLM clan chat!</strong><span>Be the first to send a message.</span></div> : clanMessages.map(message => (
+              <div key={message.id} className="clan-message-row">
+                <span className="chat-avatar">{displayName(message.sender).slice(0, 1).toUpperCase()}</span>
+                <div className="clan-message-content">
+                  <div className="chat-message-meta">
+                    <strong>{displayName(message.sender)}</strong>
+                    <small>{new Date(message.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
+                  </div>
+                  <div className="clan-message-body">{message.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <form className="chat-composer" onSubmit={sendClanMessage}>
+            <input aria-label="Message the RLM clan" maxLength="1000" placeholder="Message #general..." value={clanMessageText} onChange={e => setClanMessageText(e.target.value)} />
+            <button className="chat-send-button" type="submit" disabled={sendingClanMessage || !clanMessageText.trim()} aria-label="Send to clan" title="Send to clan">{sendingClanMessage ? '…' : '➤'}</button>
+          </form>
+        </section>
         <p className="status">{status}</p>
       </div>
     }
