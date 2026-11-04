@@ -1,3 +1,4 @@
+
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createClient } from '@supabase/supabase-js'
@@ -12,6 +13,27 @@ const menu = [
   ['Minigames', '🎮'], ['Leaderboard', '🏆'], ['Quests', '✦'],
   ['Coin shop', '🛍'], ['My profile', '◉']
 ]
+
+// Reusable circular profile picture.
+function ChatAvatar({ person, className = 'chat-avatar' }) {
+  const name = person?.display_name || person?.username || 'R'
+
+  if (person?.avatar_url) {
+    return (
+      <img
+        src={person.avatar_url}
+        alt=""
+        className={`${className} chat-avatar-image`}
+      />
+    )
+  }
+
+  return (
+    <span className={className}>
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  )
+}
 
 function App() {
   const [session, setSession] = React.useState(null)
@@ -91,7 +113,7 @@ function App() {
     const userId = session.user.id
     const [peopleResult, friendshipResult] = await Promise.all([
       supabase.from('profiles')
-        .select('id, username, display_name, created_at')
+        .select('id, username, display_name, avatar_url, created_at')
         .order('display_name', { ascending: true }),
       supabase.from('friendships')
         .select('id, requester, addressee, status, created_at')
@@ -197,7 +219,7 @@ function App() {
         return
       }
       const { data: profiles, error: profileError } = await supabase.from('profiles')
-        .select('id, username, display_name')
+        .select('id, username, display_name, avatar_url')
         .in('id', friendIds)
       if (profileError) setStatus(profileError.message)
       else setFriends(profiles || [])
@@ -205,8 +227,7 @@ function App() {
     loadFriends()
   }, [session, section, friendshipRows])
 
-  // Load saved private conversations whenever the user signs in.
-  // This keeps the sidebar list available on every page, not just Messages.
+  // Load saved private conversations.
   React.useEffect(() => {
     if (!session || !supabase) {
       setConversations([])
@@ -238,7 +259,7 @@ function App() {
         return
       }
       const { data: people, error: peopleError } = await supabase.from('profiles')
-        .select('id, username, display_name').in('id', otherIds)
+        .select('id, username, display_name, avatar_url').in('id', otherIds)
       if (peopleError) {
         setStatus(peopleError.message)
         return
@@ -247,7 +268,7 @@ function App() {
       const result = (otherMembers || []).map(member => ({
         conversationId: member.conversation_id,
         friend: profileMap[member.user_id] || {
-          id: member.user_id, display_name: 'RLM member', username: ''
+          id: member.user_id, display_name: 'RLM member', username: '', avatar_url: null
         }
       }))
       if (!cancelled) setConversations(result)
@@ -256,7 +277,7 @@ function App() {
     return () => { cancelled = true }
   }, [session])
 
-  // Load shared clan chat and subscribe to new messages
+  // Load shared clan chat and subscribe to new messages.
   React.useEffect(() => {
     if (!session || !supabase || section !== 'Clan Chat') {
       setClanMessages([])
@@ -279,7 +300,7 @@ function App() {
       let profileMap = {}
       if (userIds.length) {
         const { data: people, error: peopleError } = await supabase.from('profiles')
-          .select('id, username, display_name').in('id', userIds)
+          .select('id, username, display_name, avatar_url').in('id', userIds)
         if (peopleError) setStatus('Could not load chat names: ' + peopleError.message)
         else profileMap = Object.fromEntries((people || []).map(person => [person.id, person]))
       }
@@ -312,7 +333,7 @@ function App() {
     setSendingClanMessage(false)
   }
 
-  // Load private messages and subscribe to inserts
+  // Load private messages and subscribe to inserts.
   React.useEffect(() => {
     if (!session || !supabase || !selectedConversation) {
       setMessages([])
@@ -446,7 +467,6 @@ function App() {
     setSelectedConversation(data)
     setSelectedName(friend.display_name || friend.username || 'RLM member')
     setMessageText('')
-    // Add it to the sidebar immediately; the saved membership also reloads on next sign-in.
     setConversations(previous => {
       const withoutDuplicate = previous.filter(item => item.conversationId !== data)
       return [...withoutDuplicate, { conversationId: data, friend }]
@@ -481,9 +501,7 @@ function App() {
     const relation = relationshipWith(member.id)
     const busy = friendshipBusy === member.id || friendshipBusy === relation?.id
     if (!session) return <span className="muted">Sign in to connect</span>
-    if (relation?.status === 'accepted') {
-      return null
-    }
+    if (relation?.status === 'accepted') return null
     if (relation?.status === 'pending' && relation.requester === session.user.id) {
       return <button className="secondary" disabled>Request sent</button>
     }
@@ -546,6 +564,7 @@ function App() {
 
     if (section === 'Messages') {
       if (!session) return <div className="panel"><h2>✉ Messages</h2><p>Please sign in to use messages.</p></div>
+      const selectedFriend = conversations.find(c => c.conversationId === selectedConversation)?.friend
       return <div className="chat-page">
         <div className="chat-heading">
           <div><h2>✉ RLM Messages</h2><p className="muted">Your private conversations</p></div>
@@ -560,7 +579,7 @@ function App() {
                   setSelectedConversation(conversation.conversationId)
                   setSelectedName(displayName(conversation.friend))
                 }}>
-                <span className="chat-avatar">{displayName(conversation.friend).slice(0, 1).toUpperCase()}</span>
+                <ChatAvatar person={conversation.friend} />
                 <span className="chat-conversation-name">{displayName(conversation.friend)}</span>
               </button>
             ))}
@@ -568,21 +587,26 @@ function App() {
           <section className="chat-main">
             {selectedConversation ? <>
               <div className="chat-topbar">
-                <span className="chat-avatar">{selectedName.slice(0, 1).toUpperCase()}</span>
+                <ChatAvatar person={selectedFriend} />
                 <div><strong>{selectedName}</strong><small>Private conversation</small></div>
               </div>
               <div className="chat-messages">
-                {loadingMessages ? <p className="muted chat-placeholder">Loading messages...</p> : messages.length === 0 ? <div className="chat-placeholder"><strong>This is the beginning of your conversation.</strong><span>Send a message to say hello!</span></div> : messages.map(message => (
-                  <div key={message.id} className={`chat-message-row${message.sender_id === session.user.id ? ' own' : ' incoming'}`}>
-                    <div className="chat-message-content">
-                      <div className="chat-message-meta">
-                        <strong>{message.sender_id === session.user.id ? 'You' : selectedName}</strong>
-                        <small>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+                {loadingMessages ? <p className="muted chat-placeholder">Loading messages...</p> : messages.length === 0 ? <div className="chat-placeholder"><strong>This is the beginning of your conversation.</strong><span>Send a message to say hello!</span></div> : messages.map(message => {
+                  const isOwn = message.sender_id === session.user.id
+                  const senderProfile = isOwn ? profile : selectedFriend
+                  return (
+                    <div key={message.id} className={`chat-message-row${isOwn ? ' own' : ' incoming'}`}>
+                      <ChatAvatar person={senderProfile} className="chat-message-avatar" />
+                      <div className="chat-message-content">
+                        <div className="chat-message-meta">
+                          <strong>{isOwn ? 'You' : selectedName}</strong>
+                          <small>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+                        </div>
+                        <div className="chat-message-bubble">{message.body}</div>
                       </div>
-                      <div className="chat-message-bubble">{message.body}</div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               <form className="chat-composer" onSubmit={sendMessage}>
                 <input aria-label="Write a private message" maxLength="2000" placeholder={`Message @${selectedName}...`} value={messageText} onChange={e => setMessageText(e.target.value)} />
@@ -610,7 +634,7 @@ function App() {
           <div className="chat-messages clan-chat-messages">
             {loadingClanChat ? <p className="muted chat-placeholder">Loading clan chat...</p> : clanMessages.length === 0 ? <div className="chat-placeholder"><strong>Welcome to the RLM clan chat!</strong><span>Be the first to send a message.</span></div> : clanMessages.map(message => (
               <div key={message.id} className="clan-message-row">
-                <span className="chat-avatar">{displayName(message.sender).slice(0, 1).toUpperCase()}</span>
+                <ChatAvatar person={message.sender} />
                 <div className="clan-message-content">
                   <div className="chat-message-meta">
                     <strong>{displayName(message.sender)}</strong>
@@ -787,7 +811,8 @@ function App() {
           }}
           title={displayName(conversation.friend)}
         >
-          ✉ <span>{displayName(conversation.friend)}</span>
+          <ChatAvatar person={conversation.friend} className="sidebar-chat-avatar" />
+          <span>{displayName(conversation.friend)}</span>
         </button>
       ))}
 
