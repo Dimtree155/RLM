@@ -26,6 +26,8 @@ function App() {
   const [profile, setProfile] = React.useState(null)
   const [newDisplayName, setNewDisplayName] = React.useState('')
   const [savingName, setSavingName] = React.useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = React.useState(false)
+  const avatarInputRef = React.useRef(null)
 
   // Member directory and friend requests
   const [members, setMembers] = React.useState([])
@@ -399,6 +401,39 @@ function App() {
     setSavingName(false)
   }
 
+  async function uploadAvatar(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !session || !supabase) return
+    if (!file.type.startsWith('image/')) return setStatus('Please choose an image file.')
+    if (file.size > 3 * 1024 * 1024) return setStatus('Please choose an image smaller than 3 MB.')
+
+    setUploadingAvatar(true)
+    setStatus('Uploading profile picture...')
+    const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const filePath = `${session.user.id}/${Date.now()}.${extension || 'jpg'}`
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, {
+      cacheControl: '3600', upsert: true, contentType: file.type
+    })
+    if (uploadError) {
+      setStatus('Could not upload picture: ' + uploadError.message)
+      setUploadingAvatar(false)
+      return
+    }
+    const { data: publicData } = supabase.storage.from('avatars').getPublicUrl(filePath)
+    const avatarUrl = publicData.publicUrl
+    const { data, error } = await supabase.from('profiles')
+      .update({ avatar_url: avatarUrl }).eq('id', session.user.id)
+      .select('username, display_name, avatar_url, created_at').maybeSingle()
+    if (error) setStatus('Picture uploaded, but profile could not be updated: ' + error.message)
+    else if (!data) setStatus('Picture uploaded, but your profile could not be found.')
+    else {
+      setProfile(data)
+      setStatus('Profile picture updated!')
+    }
+    setUploadingAvatar(false)
+  }
+
   async function startConversation(friend) {
     if (!supabase || !session) return
     if (friend.id === session.user.id) return
@@ -689,6 +724,15 @@ function App() {
     if (section === 'My profile') return <div className="panel">
       <h2>◉ My profile</h2>
       {session ? <>
+        <div className="profile-avatar-editor">
+          {profile?.avatar_url ? <img src={profile.avatar_url} alt="Your profile" className="profile-avatar-preview" /> : <div className="profile-avatar-placeholder">{(profile?.display_name || session.user.email || 'R').slice(0, 1).toUpperCase()}</div>}
+          <div>
+            <strong>Profile picture</strong>
+            <p className="muted">Choose an image to use as your RLM avatar (max 3 MB).</p>
+            <input ref={avatarInputRef} type="file" accept="image/*" onChange={uploadAvatar} style={{ display: 'none' }} />
+            <button className="secondary" type="button" onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>{uploadingAvatar ? 'Uploading...' : 'Change profile picture'}</button>
+          </div>
+        </div>
         <p><strong>Email:</strong> {session.user.email}</p>
         <p><strong>Username:</strong> {profile?.username || 'Not set yet'}</p>
         <p><strong>Display name:</strong> {profile?.display_name || 'Not set yet'}</p>
@@ -725,7 +769,7 @@ function App() {
     <aside className="sidebar">
       <div className="brand">RLM<span>.</span></div>
       <div className="caption">MAIN MENU</div>
-      {menu.map(([name, icon]) => <button key={name} className={section === name ? 'nav active' : 'nav'} onClick={() => setSection(name)}>{icon} <span>{name}</span></button>)}
+      {menu.map(([name, icon]) => <button key={name} className={section === name ? 'nav active' : 'nav'} onClick={() => setSection(name)}>{name === 'My profile' && profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="nav-profile-avatar" /> : icon} <span>{name}</span></button>)}
 
       <div className="caption" style={{ marginTop: '22px' }}>PRIVATE CHATS</div>
       {!session ? (
@@ -749,7 +793,7 @@ function App() {
 
       <div className="caption">STAFF</div>
       <div className="staff-note">Staff tools appear after a trusted owner assigns your role.</div>
-      <div className="account">{session ? (profile?.display_name || session.user.email) : 'Guest'}<small>{session ? 'SIGNED IN' : 'NOT SIGNED IN'}</small></div>
+      <div className="account">{session && profile?.avatar_url && <img src={profile.avatar_url} alt="" className="sidebar-avatar" />} {session ? (profile?.display_name || session.user.email) : 'Guest'}<small>{session ? 'SIGNED IN' : 'NOT SIGNED IN'}</small></div>
     </aside>
     <main>
       <header>
