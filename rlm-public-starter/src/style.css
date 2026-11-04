@@ -109,3 +109,32 @@ header{padding:0 13px}
 .chat-heading h2{font-size:19px}
 .chat-message-content{max-width:90%}
 }
+/* Discord-style circular profile pictures */
+.profile-avatar,
+.profile-picture,
+.account img,
+.chat-avatar img {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: inline-block;
+  overflow: hidden;
+}
+
+/* Keep sidebar avatar compact */
+.account img {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  vertical-align: middle;
+}
+
+/* Prevent profile images from expanding the page */
+img {
+  max-width: 100%;
+}
