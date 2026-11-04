@@ -26,8 +26,20 @@ function App() {
   const [status, setStatus] = React.useState('')
   const [section, setSection] = React.useState('Home')
   const [profile, setProfile] = React.useState(null)
+
+  // Profile editing
   const [newDisplayName, setNewDisplayName] = React.useState('')
   const [savingName, setSavingName] = React.useState(false)
+
+  // Messaging
+  const [friends, setFriends] = React.useState([])
+  const [conversations, setConversations] = React.useState([])
+  const [selectedConversation, setSelectedConversation] = React.useState(null)
+  const [selectedName, setSelectedName] = React.useState('')
+  const [messages, setMessages] = React.useState([])
+  const [messageText, setMessageText] = React.useState('')
+  const [loadingMessages, setLoadingMessages] = React.useState(false)
+  const [sendingMessage, setSendingMessage] = React.useState(false)
 
   React.useEffect(() => {
     if (!supabase) return
@@ -44,6 +56,7 @@ function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  // Load the signed-in user's profile
   React.useEffect(() => {
     if (!session || !supabase) {
       setProfile(null)
@@ -64,6 +77,190 @@ function App() {
         }
       })
   }, [session])
+
+  // Load accepted friends
+  React.useEffect(() => {
+    if (!session || !supabase) {
+      setFriends([])
+      return
+    }
+
+    async function loadFriends() {
+      const userId = session.user.id
+
+      const { data, error } = await supabase
+        .from('friendships')
+        .select('requester, addressee')
+        .eq('status', 'accepted')
+        .or(`requester.eq.${userId},addressee.eq.${userId}`)
+
+      if (error) {
+        setStatus(error.message)
+        return
+      }
+
+      const friendIds = (data || []).map(row =>
+        row.requester === userId ? row.addressee : row.requester
+      )
+
+      if (friendIds.length === 0) {
+        setFriends([])
+        return
+      }
+
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name')
+        .in('id', friendIds)
+
+      if (profileError) {
+        setStatus(profileError.message)
+        return
+      }
+
+      setFriends(profiles || [])
+    }
+
+    loadFriends()
+  }, [session, section])
+
+  // Load existing conversations
+  React.useEffect(() => {
+    if (!session || !supabase || section !== 'Messages') {
+      return
+    }
+
+    let cancelled = false
+
+    async function loadConversations() {
+      const userId = session.user.id
+
+      const { data: memberships, error } = await supabase
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', userId)
+
+      if (error) {
+        setStatus(error.message)
+        return
+      }
+
+      const conversationIds = [
+        ...new Set((memberships || []).map(item => item.conversation_id))
+      ]
+
+      if (conversationIds.length === 0) {
+        if (!cancelled) setConversations([])
+        return
+      }
+
+      const { data: otherMembers, error: memberError } = await supabase
+        .from('conversation_members')
+        .select('conversation_id, user_id')
+        .in('conversation_id', conversationIds)
+        .neq('user_id', userId)
+
+      if (memberError) {
+        setStatus(memberError.message)
+        return
+      }
+
+      const otherIds = [
+        ...new Set((otherMembers || []).map(item => item.user_id))
+      ]
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name')
+        .in('id', otherIds)
+
+      if (profilesError) {
+        setStatus(profilesError.message)
+        return
+      }
+
+      const profileMap = Object.fromEntries(
+        (profiles || []).map(person => [person.id, person])
+      )
+
+      const result = (otherMembers || []).map(member => ({
+        conversationId: member.conversation_id,
+        friend: profileMap[member.user_id] || {
+          id: member.user_id,
+          display_name: 'RLM member',
+          username: ''
+        }
+      }))
+
+      if (!cancelled) {
+        setConversations(result)
+      }
+    }
+
+    loadConversations()
+
+    return () => {
+      cancelled = true
+    }
+  }, [session, section])
+
+  // Load messages and listen for new ones
+  React.useEffect(() => {
+    if (!session || !supabase || !selectedConversation) {
+      setMessages([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadMessages() {
+      setLoadingMessages(true)
+
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, conversation_id, sender_id, body, created_at')
+        .eq('conversation_id', selectedConversation)
+        .order('created_at', { ascending: true })
+
+      if (cancelled) return
+
+      if (error) {
+        setStatus(error.message)
+      } else {
+        setMessages(data || [])
+      }
+
+      setLoadingMessages(false)
+    }
+
+    loadMessages()
+
+    const channel = supabase
+      .channel(`messages-${selectedConversation}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation}`
+        },
+        payload => {
+          setMessages(previous => {
+            if (previous.some(item => item.id === payload.new.id)) {
+              return previous
+            }
+            return [...previous, payload.new]
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [session, selectedConversation])
 
   async function signUp(e) {
     e.preventDefault()
@@ -105,6 +302,8 @@ function App() {
     await supabase?.auth.signOut()
     setStatus('Signed out.')
     setSection('Home')
+    setSelectedConversation(null)
+    setMessages([])
   }
 
   async function saveDisplayName() {
@@ -115,13 +314,8 @@ function App() {
       return
     }
 
-    if (!cleanName) {
-      setStatus('Please enter a name.')
-      return
-    }
-
-    if (cleanName.length > 24) {
-      setStatus('Your name must be 24 characters or fewer.')
+    if (!cleanName || cleanName.length > 24) {
+      setStatus('Enter a name between 1 and 24 characters.')
       return
     }
 
@@ -138,31 +332,79 @@ function App() {
     if (error) {
       setStatus('Could not save your name: ' + error.message)
     } else if (!data) {
-      const { data: newProfile, error: insertError } =
-        await supabase
-          .from('profiles')
-          .upsert(
-            {
-              id: session.user.id,
-              display_name: cleanName
-            },
-            { onConflict: 'id' }
-          )
-          .select()
-          .single()
-
-      if (insertError) {
-        setStatus('Could not save your name: ' + insertError.message)
-      } else {
-        setProfile(newProfile)
-        setStatus('Your name has been updated!')
-      }
+      setStatus('Your profile could not be found.')
     } else {
       setProfile(data)
       setStatus('Your name has been updated!')
     }
 
     setSavingName(false)
+  }
+
+  // Start or open a private conversation with an accepted friend
+  async function startConversation(friend) {
+    if (!supabase || !session) return
+
+    setStatus('Opening conversation...')
+
+    const { data, error } = await supabase.rpc(
+      'start_friend_conversation',
+      { friend_id: friend.id }
+    )
+
+    if (error) {
+      setStatus('Could not open conversation: ' + error.message)
+      return
+    }
+
+    setSelectedConversation(data)
+    setSelectedName(friend.display_name || friend.username || 'RLM member')
+    setMessageText('')
+    setStatus('')
+    setSection('Messages')
+  }
+
+  async function sendMessage(e) {
+    e.preventDefault()
+
+    const body = messageText.trim()
+
+    if (!body || !selectedConversation || !session || !supabase) {
+      return
+    }
+
+    if (body.length > 2000) {
+      setStatus('Messages must be 2000 characters or fewer.')
+      return
+    }
+
+    setSendingMessage(true)
+    setStatus('')
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: selectedConversation,
+        sender_id: session.user.id,
+        body
+      })
+      .select()
+      .single()
+
+    if (error) {
+      setStatus('Message could not be sent: ' + error.message)
+    } else {
+      setMessageText('')
+
+      setMessages(previous => {
+        if (previous.some(item => item.id === data.id)) {
+          return previous
+        }
+        return [...previous, data]
+      })
+    }
+
+    setSendingMessage(false)
   }
 
   function Page() {
@@ -229,7 +471,10 @@ function App() {
         <div className="grid">
           <div className="panel">
             <h3>✉ Messages</h3>
-            <p className="muted">Your messaging area.</p>
+            <p className="muted">Chat with your RLM friends.</p>
+            <button className="secondary" onClick={() => setSection('Messages')}>
+              Open messages
+            </button>
           </div>
 
           <div className="panel">
@@ -246,20 +491,203 @@ function App() {
     }
 
     if (section === 'Messages') {
+      if (!session) {
+        return <div className="panel">
+          <h2>✉ Messages</h2>
+          <p>Please sign in to use messages.</p>
+        </div>
+      }
+
       return <div className="panel">
-        <h2>✉ Messages</h2>
-        <p className="muted">Your private conversations will appear here.</p>
-        {!session
-          ? <p>Please sign in to use messages.</p>
-          : <p>Messaging is coming soon!</p>}
+        <h2>✉ RLM Messages</h2>
+        <p className="muted">
+          Private conversations with your accepted friends.
+        </p>
+
+        <div className="grid">
+          <div className="panel">
+            <h3>Your conversations</h3>
+
+            {conversations.length === 0 ? (
+              <p className="muted">No conversations yet.</p>
+            ) : (
+              conversations.map(conversation => (
+                <button
+                  key={conversation.conversationId}
+                  className="secondary"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    marginBottom: '8px'
+                  }}
+                  onClick={() => {
+                    setSelectedConversation(conversation.conversationId)
+                    setSelectedName(
+                      conversation.friend.display_name ||
+                      conversation.friend.username ||
+                      'RLM member'
+                    )
+                  }}
+                >
+                  {conversation.friend.display_name ||
+                    conversation.friend.username ||
+                    'RLM member'}
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="panel">
+            {selectedConversation ? (
+              <>
+                <h3>Chat with {selectedName}</h3>
+
+                <div
+                  style={{
+                    minHeight: '220px',
+                    maxHeight: '380px',
+                    overflowY: 'auto',
+                    padding: '10px',
+                    marginBottom: '12px',
+                    background: 'rgba(0,0,0,0.2)',
+                    borderRadius: '10px'
+                  }}
+                >
+                  {loadingMessages ? (
+                    <p className="muted">Loading messages...</p>
+                  ) : messages.length === 0 ? (
+                    <p className="muted">
+                      No messages yet. Say hello!
+                    </p>
+                  ) : (
+                    messages.map(message => (
+                      <div
+                        key={message.id}
+                        style={{
+                          marginBottom: '12px',
+                          textAlign:
+                            message.sender_id === session.user.id
+                              ? 'right'
+                              : 'left'
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '10px 14px',
+                            borderRadius: '12px',
+                            background:
+                              message.sender_id === session.user.id
+                                ? '#7044c8'
+                                : '#29233b',
+                            maxWidth: '85%',
+                            overflowWrap: 'anywhere'
+                          }}
+                        >
+                          {message.body}
+                        </span>
+                        <small
+                          style={{
+                            display: 'block',
+                            opacity: 0.6,
+                            marginTop: '3px'
+                          }}
+                        >
+                          {message.sender_id === session.user.id
+                            ? 'You'
+                            : selectedName}
+                          {' · '}
+                          {new Date(message.created_at).toLocaleTimeString(
+                            [],
+                            { hour: '2-digit', minute: '2-digit' }
+                          )}
+                        </small>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <form onSubmit={sendMessage}>
+                  <label>
+                    Your message
+                    <textarea
+                      rows="3"
+                      maxLength="2000"
+                      placeholder="Write a message..."
+                      value={messageText}
+                      onChange={e => setMessageText(e.target.value)}
+                    />
+                  </label>
+
+                  <button
+                    className="primary"
+                    disabled={sendingMessage || !messageText.trim()}
+                  >
+                    {sendingMessage ? 'Sending...' : 'Send message'}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <h3>Choose a conversation</h3>
+                <p className="muted">
+                  Select a conversation or start one with a friend.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <h3>Start a conversation</h3>
+          {friends.length === 0 ? (
+            <p className="muted">
+              You don't have any accepted friends yet.
+              Add friends and accept their requests first.
+            </p>
+          ) : (
+            friends.map(friend => (
+              <button
+                key={friend.id}
+                className="secondary"
+                style={{ margin: '5px' }}
+                onClick={() => startConversation(friend)}
+              >
+                Message {friend.display_name || friend.username}
+              </button>
+            ))
+          )}
+        </div>
+
+        <p className="status">{status}</p>
       </div>
     }
 
     if (section === 'Friends') {
       return <div className="panel">
         <h2>♙ Friends</h2>
-        <p className="muted">Your friends list and friend requests.</p>
-        <p>Friend adding is coming soon!</p>
+        <p className="muted">Your accepted RLM friends.</p>
+
+        {!session ? (
+          <p>Please sign in to view your friends.</p>
+        ) : friends.length === 0 ? (
+          <p>No accepted friends yet.</p>
+        ) : (
+          friends.map(friend => (
+            <div key={friend.id} className="panel">
+              <strong>
+                {friend.display_name || friend.username}
+              </strong>
+              <button
+                className="secondary"
+                style={{ marginLeft: '12px' }}
+                onClick={() => startConversation(friend)}
+              >
+                Message
+              </button>
+            </div>
+          ))
+        )}
       </div>
     }
 
@@ -267,24 +695,11 @@ function App() {
       return <div className="panel">
         <h2>🎮 Minigames</h2>
         <p className="muted">Choose a game to play.</p>
-
         <div className="grid">
-          <div className="panel">
-            <h3>⚔️ Arena</h3>
-            <p>Coming soon!</p>
-          </div>
-          <div className="panel">
-            <h3>♟ Chess</h3>
-            <p>Coming soon!</p>
-          </div>
-          <div className="panel">
-            <h3>⭕ Tic-tac-toe</h3>
-            <p>Coming soon!</p>
-          </div>
-          <div className="panel">
-            <h3>🏎️ Car racer</h3>
-            <p>Coming soon!</p>
-          </div>
+          <div className="panel"><h3>⚔️ Arena</h3><p>Coming soon!</p></div>
+          <div className="panel"><h3>♟ Chess</h3><p>Coming soon!</p></div>
+          <div className="panel"><h3>⭕ Tic-tac-toe</h3><p>Coming soon!</p></div>
+          <div className="panel"><h3>🏎️ Car racer</h3><p>Coming soon!</p></div>
         </div>
       </div>
     }
@@ -319,16 +734,10 @@ function App() {
 
         {session ? (
           <>
+            <p><strong>Email:</strong> {session.user.email}</p>
+            <p><strong>Username:</strong> {profile?.username || 'Not set yet'}</p>
             <p>
-              <strong>Email:</strong> {session.user.email}
-            </p>
-
-            <p>
-              <strong>Username:</strong> {profile?.username || 'Not set yet'}
-            </p>
-
-            <p>
-              <strong>Current display name:</strong>{' '}
+              <strong>Display name:</strong>{' '}
               {profile?.display_name || 'Not set yet'}
             </p>
 
@@ -352,6 +761,9 @@ function App() {
             </button>
 
             <p className="status">{status}</p>
+            <button className="secondary" onClick={signOut}>
+              Sign out
+            </button>
           </>
         ) : (
           <p>Please sign in to view your profile.</p>
@@ -359,9 +771,7 @@ function App() {
       </div>
     }
 
-    return <div className="panel">
-      <h2>Page not found</h2>
-    </div>
+    return <div className="panel"><h2>Page not found</h2></div>
   }
 
   return (
@@ -404,8 +814,7 @@ function App() {
 
           <div className="notice">
             <strong>RLM:</strong> New features are being built.
-            Private messaging and multiplayer features need secure
-            backend support before public launch.
+            Private messaging is available between accepted friends.
           </div>
         </div>
       </main>
