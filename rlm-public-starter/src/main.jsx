@@ -26,43 +26,78 @@ function App() {
   const [status, setStatus] = React.useState('')
   const [section, setSection] = React.useState('Home')
   const [profile, setProfile] = React.useState(null)
+  const [newDisplayName, setNewDisplayName] = React.useState('')
+  const [savingName, setSavingName] = React.useState(false)
 
   React.useEffect(() => {
     if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+    })
+
     const { data: listener } =
-      supabase.auth.onAuthStateChange((_event, next) => setSession(next))
+      supabase.auth.onAuthStateChange((_event, next) => {
+        setSession(next)
+      })
+
     return () => listener.subscription.unsubscribe()
   }, [])
 
   React.useEffect(() => {
     if (!session || !supabase) {
       setProfile(null)
+      setNewDisplayName('')
       return
     }
+
     supabase.from('profiles')
       .select('username, display_name, avatar_url, created_at')
       .eq('id', session.user.id)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (error) setStatus(error.message)
-        else setProfile(data)
+        if (error) {
+          setStatus(error.message)
+        } else {
+          setProfile(data)
+          setNewDisplayName(data?.display_name || '')
+        }
       })
   }, [session])
 
   async function signUp(e) {
     e.preventDefault()
-    setStatus('Creating account…')
-    if (!supabase) return setStatus('Supabase is not connected.')
-    const { error } = await supabase.auth.signUp({ email, password })
-    setStatus(error ? error.message : 'Check your email to confirm your account.')
+    setStatus('Creating account...')
+
+    if (!supabase) {
+      return setStatus('Supabase is not connected.')
+    }
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password
+    })
+
+    setStatus(
+      error
+        ? error.message
+        : 'Check your email to confirm your account.'
+    )
   }
 
   async function signIn(e) {
     e.preventDefault()
-    setStatus('Signing in…')
-    if (!supabase) return setStatus('Supabase is not connected.')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    setStatus('Signing in...')
+
+    if (!supabase) {
+      return setStatus('Supabase is not connected.')
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
+
     setStatus(error ? error.message : 'Signed in!')
   }
 
@@ -70,6 +105,64 @@ function App() {
     await supabase?.auth.signOut()
     setStatus('Signed out.')
     setSection('Home')
+  }
+
+  async function saveDisplayName() {
+    const cleanName = newDisplayName.trim()
+
+    if (!session || !supabase) {
+      setStatus('Please sign in first.')
+      return
+    }
+
+    if (!cleanName) {
+      setStatus('Please enter a name.')
+      return
+    }
+
+    if (cleanName.length > 24) {
+      setStatus('Your name must be 24 characters or fewer.')
+      return
+    }
+
+    setSavingName(true)
+    setStatus('Saving your name...')
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ display_name: cleanName })
+      .eq('id', session.user.id)
+      .select()
+      .maybeSingle()
+
+    if (error) {
+      setStatus('Could not save your name: ' + error.message)
+    } else if (!data) {
+      const { data: newProfile, error: insertError } =
+        await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: session.user.id,
+              display_name: cleanName
+            },
+            { onConflict: 'id' }
+          )
+          .select()
+          .single()
+
+      if (insertError) {
+        setStatus('Could not save your name: ' + insertError.message)
+      } else {
+        setProfile(newProfile)
+        setStatus('Your name has been updated!')
+      }
+    } else {
+      setProfile(data)
+      setStatus('Your name has been updated!')
+    }
+
+    setSavingName(false)
   }
 
   function Page() {
@@ -85,41 +178,69 @@ function App() {
           <div className="panel auth">
             <h2>Create an account or sign in</h2>
             <p className="muted">Join the RLM community.</p>
+
             <form onSubmit={signIn}>
               <label>Email
-                <input type="email" required value={email}
-                  onChange={e => setEmail(e.target.value)} />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
               </label>
+
               <label>Password
-                <input type="password" minLength="8" required
+                <input
+                  type="password"
+                  minLength="8"
+                  required
                   value={password}
-                  onChange={e => setPassword(e.target.value)} />
+                  onChange={e => setPassword(e.target.value)}
+                />
               </label>
+
               <div className="actions">
                 <button className="primary">Sign in</button>
-                <button type="button" className="secondary" onClick={signUp}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={signUp}
+                >
                   Create account
                 </button>
               </div>
             </form>
+
             <p className="status">{status}</p>
           </div>
         ) : (
           <div className="panel">
-            <h2>Welcome back, {profile?.display_name || session.user.email}!</h2>
+            <h2>
+              Welcome back, {profile?.display_name || session.user.email}!
+            </h2>
             <p className="muted">Your RLM account is connected.</p>
-            <button className="secondary" onClick={signOut}>Sign out</button>
+            <button className="secondary" onClick={signOut}>
+              Sign out
+            </button>
             <p className="status">{status}</p>
           </div>
         )}
 
         <div className="grid">
-          <div className="panel"><h3>✉ Messages</h3>
-            <p className="muted">Your messaging area.</p></div>
-          <div className="panel"><h3>🎮 Minigames</h3>
-            <p className="muted">Your gaming area.</p></div>
-          <div className="panel"><h3>🏆 Progression</h3>
-            <p className="muted">Your RLM journey.</p></div>
+          <div className="panel">
+            <h3>✉ Messages</h3>
+            <p className="muted">Your messaging area.</p>
+          </div>
+
+          <div className="panel">
+            <h3>🎮 Minigames</h3>
+            <p className="muted">Your gaming area.</p>
+          </div>
+
+          <div className="panel">
+            <h3>🏆 Progression</h3>
+            <p className="muted">Your RLM journey.</p>
+          </div>
         </div>
       </>
     }
@@ -146,11 +267,24 @@ function App() {
       return <div className="panel">
         <h2>🎮 Minigames</h2>
         <p className="muted">Choose a game to play.</p>
+
         <div className="grid">
-          <div className="panel"><h3>⚔️ Arena</h3><p>Coming soon!</p></div>
-          <div className="panel"><h3>♟ Chess</h3><p>Coming soon!</p></div>
-          <div className="panel"><h3>⭕ Tic-tac-toe</h3><p>Coming soon!</p></div>
-          <div className="panel"><h3>🏎️ Car racer</h3><p>Coming soon!</p></div>
+          <div className="panel">
+            <h3>⚔️ Arena</h3>
+            <p>Coming soon!</p>
+          </div>
+          <div className="panel">
+            <h3>♟ Chess</h3>
+            <p>Coming soon!</p>
+          </div>
+          <div className="panel">
+            <h3>⭕ Tic-tac-toe</h3>
+            <p>Coming soon!</p>
+          </div>
+          <div className="panel">
+            <h3>🏎️ Car racer</h3>
+            <p>Coming soon!</p>
+          </div>
         </div>
       </div>
     }
@@ -182,17 +316,52 @@ function App() {
     if (section === 'My profile') {
       return <div className="panel">
         <h2>◉ My profile</h2>
+
         {session ? (
           <>
-            <p><strong>Email:</strong> {session.user.email}</p>
-            <p><strong>Username:</strong> {profile?.username || 'Not set yet'}</p>
-            <p><strong>Display name:</strong> {profile?.display_name || 'Not set yet'}</p>
+            <p>
+              <strong>Email:</strong> {session.user.email}
+            </p>
+
+            <p>
+              <strong>Username:</strong> {profile?.username || 'Not set yet'}
+            </p>
+
+            <p>
+              <strong>Current display name:</strong>{' '}
+              {profile?.display_name || 'Not set yet'}
+            </p>
+
+            <label>
+              Change your display name
+              <input
+                type="text"
+                maxLength={24}
+                placeholder="Enter your new name"
+                value={newDisplayName}
+                onChange={e => setNewDisplayName(e.target.value)}
+              />
+            </label>
+
+            <button
+              className="primary"
+              onClick={saveDisplayName}
+              disabled={savingName}
+            >
+              {savingName ? 'Saving...' : 'Save new name'}
+            </button>
+
+            <p className="status">{status}</p>
           </>
-        ) : <p>Please sign in to view your profile.</p>}
+        ) : (
+          <p>Please sign in to view your profile.</p>
+        )}
       </div>
     }
 
-    return <div className="panel"><h2>Page not found</h2></div>
+    return <div className="panel">
+      <h2>Page not found</h2>
+    </div>
   }
 
   return (
@@ -217,7 +386,9 @@ function App() {
         </div>
 
         <div className="account">
-          {session ? (profile?.display_name || session.user.email) : 'Guest'}
+          {session
+            ? (profile?.display_name || session.user.email)
+            : 'Guest'}
           <small>{session ? 'SIGNED IN' : 'NOT SIGNED IN'}</small>
         </div>
       </aside>
@@ -227,8 +398,10 @@ function App() {
           <strong>{section}</strong>
           <span className="online">● RLM</span>
         </header>
+
         <div className="content">
           <Page />
+
           <div className="notice">
             <strong>RLM:</strong> New features are being built.
             Private messaging and multiplayer features need secure
@@ -241,4 +414,3 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />)
-
