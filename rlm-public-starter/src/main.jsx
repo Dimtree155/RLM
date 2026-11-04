@@ -401,12 +401,9 @@ function App() {
 
   async function startConversation(friend) {
     if (!supabase || !session) return
-    if (!isAcceptedFriend(friend.id)) {
-      setStatus('You can message this member after they accept your friend request.')
-      return
-    }
+    if (friend.id === session.user.id) return
     setStatus('Opening conversation...')
-    const { data, error } = await supabase.rpc('start_friend_conversation', { friend_id: friend.id })
+    const { data, error } = await supabase.rpc('start_private_conversation', { other_user_id: friend.id })
     if (error) {
       setStatus('Could not open conversation: ' + error.message)
       return
@@ -450,7 +447,7 @@ function App() {
     const busy = friendshipBusy === member.id || friendshipBusy === relation?.id
     if (!session) return <span className="muted">Sign in to connect</span>
     if (relation?.status === 'accepted') {
-      return <button className="secondary" onClick={() => startConversation(member)}>✉ Message</button>
+      return null
     }
     if (relation?.status === 'pending' && relation.requester === session.user.id) {
       return <button className="secondary" disabled>Request sent</button>
@@ -516,7 +513,7 @@ function App() {
       if (!session) return <div className="panel"><h2>✉ Messages</h2><p>Please sign in to use messages.</p></div>
       return <div className="panel">
         <h2>✉ RLM Messages</h2>
-        <p className="muted">Private conversations with your accepted friends.</p>
+        <p className="muted">Private conversations with RLM members.</p>
         <div className="grid">
           <div className="panel">
             <h3>Your conversations</h3>
@@ -649,7 +646,20 @@ function App() {
         {loadingMembers ? <p className="muted">Loading RLM members...</p> : members.length === 0 ? <p className="muted">No other members found yet.</p> : members.map(member => (
           <div className="panel" key={member.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
             <div>
-              <strong>{displayName(member)}</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <strong>{displayName(member)}</strong>
+                {session && relationshipWith(member.id)?.status !== 'blocked' && (
+                  <button
+                    className="secondary"
+                    style={{ padding: '5px 9px', minWidth: '34px' }}
+                    aria-label={`Open private chat with ${displayName(member)}`}
+                    title={`Message ${displayName(member)}`}
+                    onClick={() => startConversation(member)}
+                  >
+                    ✉
+                  </button>
+                )}
+              </div>
               {member.username && <div className="muted" style={{ fontSize: '0.9em' }}>@{member.username}</div>}
             </div>
             <div className="actions">{memberFriendControls(member)}</div>
