@@ -986,7 +986,7 @@ function App() {
         </header>
 
         <div className="content">
-          <Page />
+          {Page()}
 
           <div className="notice">
             <strong>RLM:</strong> New features are being built.
