@@ -186,3 +186,41 @@ img {
 .sidebar-avatar {
   display: inline-block;
 }
+/* Small circular avatars in private chats and clan chat */
+.chat-avatar-image,
+.chat-message-avatar,
+.sidebar-chat-avatar {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  max-width: 38px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  flex: 0 0 38px;
+  display: inline-flex;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.chat-message-avatar,
+.sidebar-chat-avatar {
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-message-avatar {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  flex-basis: 34px;
+}
+
+.sidebar-chat-avatar {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+  flex-basis: 28px;
+  font-size: 12px;
+}
