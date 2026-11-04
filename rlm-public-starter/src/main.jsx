@@ -24,6 +24,7 @@ function App() {
   const [session, setSession] = React.useState(null)
   const [email, setEmail] = React.useState('')
   const [password, setPassword] = React.useState('')
+  const [signupDisplayName, setSignupDisplayName] = React.useState('')
   const [status, setStatus] = React.useState('')
   const [section, setSection] = React.useState('Home')
   const [lightMode, setLightMode] = React.useState(() => {
@@ -381,16 +382,37 @@ function App() {
       return setStatus('Supabase is not connected.')
     }
 
-    const { error } = await supabase.auth.signUp({
+    const cleanDisplayName = signupDisplayName.trim()
+    if (!cleanDisplayName || cleanDisplayName.length > 24) {
+      return setStatus('Choose a display name between 1 and 24 characters.')
+    }
+
+    const { error, data } = await supabase.auth.signUp({
       email,
-      password
+      password,
+      options: {
+        data: { display_name: cleanDisplayName }
+      }
     })
 
-    setStatus(
-      error
-        ? error.message
-        : 'Check your email to confirm your account.'
-    )
+    if (error) {
+      setStatus(error.message)
+    } else if (data?.session && data.user) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(
+          { id: data.user.id, display_name: cleanDisplayName },
+          { onConflict: 'id' }
+        )
+
+      setStatus(
+        profileError
+          ? 'Account created, but the display name could not be saved: ' + profileError.message
+          : 'Account created! Welcome to RLM.'
+      )
+    } else {
+      setStatus('Account created. If email confirmation is enabled in Supabase, you will still need to confirm your email.')
+    }
   }
 
   async function signIn(e) {
@@ -537,6 +559,16 @@ function App() {
             <p className="muted">Join the RLM community.</p>
 
             <form onSubmit={signIn}>
+              <label>Display name (for new accounts)
+                <input
+                  type="text"
+                  maxLength="24"
+                  placeholder="Your RLM name"
+                  value={signupDisplayName}
+                  onChange={e => setSignupDisplayName(e.target.value)}
+                />
+              </label>
+
               <label>Email
                 <input
                   type="email"
