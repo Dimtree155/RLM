@@ -26,6 +26,13 @@ function App() {
   const [password, setPassword] = React.useState('')
   const [status, setStatus] = React.useState('')
   const [section, setSection] = React.useState('Home')
+  const [lightMode, setLightMode] = React.useState(() => {
+    try { return localStorage.getItem('rlm-theme') === 'light' } catch { return false }
+  })
+
+  React.useEffect(() => {
+    try { localStorage.setItem('rlm-theme', lightMode ? 'light' : 'dark') } catch {}
+  }, [lightMode])
   const [profile, setProfile] = React.useState(null)
 
   // Profile editing
@@ -951,7 +958,26 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className={lightMode ? 'app light-mode' : 'app'}>
+      <style>{`
+        .app.light-mode { background: #f3f4fb; color: #202238; color-scheme: light; }
+        .app.light-mode main { background: #f3f4fb; color: #202238; }
+        .app.light-mode .sidebar { background: #ffffff; border-color: #e2e4ef; color: #25263a; }
+        .app.light-mode header { background: #ffffff; border-color: #e2e4ef; color: #202238; }
+        .app.light-mode .panel, .app.light-mode .hero, .app.light-mode .notice,
+        .app.light-mode .staff-note, .app.light-mode .account { background: #ffffff; color: #292b40; border-color: #e2e4ef; }
+        .app.light-mode .caption, .app.light-mode .muted, .app.light-mode .eyebrow,
+        .app.light-mode small { color: #72758d; }
+        .app.light-mode input, .app.light-mode textarea, .app.light-mode select {
+          background: #ffffff; color: #202238; border-color: #d6d9e8;
+        }
+        .app.light-mode .nav { color: #555970; }
+        .app.light-mode .nav:hover, .app.light-mode .nav.active { background: #eeeaff; color: #6941c6; }
+        .app.light-mode .secondary { background: #ececf5; color: #303149; border-color: #d9daea; }
+        .app.light-mode .theme-toggle { background: #eeeaff; color: #5736a8; border: 1px solid #d9d0fa; }
+        .app .theme-toggle { margin-left: auto; padding: 8px 13px; border-radius: 10px; cursor: pointer; font: inherit; font-weight: 600; }
+        .app.light-mode .online { color: #21865b; }
+      `}</style>
       <aside className="sidebar">
         <div className="brand">RLM<span>.</span></div>
         <div className="caption">MAIN MENU</div>
@@ -983,6 +1009,14 @@ function App() {
         <header>
           <strong>{section}</strong>
           <span className="online">● RLM</span>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={() => setLightMode(value => !value)}
+            aria-label={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {lightMode ? '🌙 Dark mode' : '☀️ Light mode'}
+          </button>
         </header>
 
         <div className="content">
