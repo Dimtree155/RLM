@@ -1370,7 +1370,7 @@ function App() {
 
                     <div className="clan-message-content">
                       <div className="chat-message-meta">
-                        <strong>{displayName(message.sender)}</strong>
+                        <strong><MemberName person={message.sender} role={memberRoles[message.sender?.id]} /></strong>
                         <small>
                           {new Date(message.created_at).toLocaleString(
                             [],
