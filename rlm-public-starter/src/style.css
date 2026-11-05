@@ -235,39 +235,3 @@ img {
   margin-right: 4px;
   display: inline-block;
 }
-/* Golden Shimmer Effect for Owner Names */
-.owner-nametag {
-  font-weight: bold;
-  background: linear-gradient(
-    90deg, 
-    #ffd700 0%, 
-    #fff8dc 25%, 
-    #ffd700 50%, 
-    #b8860b 75%, 
-    #ffd700 100%
-  );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: goldShimmer 3s linear infinite;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px; /* Space between the name and the crown */
-}
-
-/* Crown Icon Styling */
-.owner-crown {
-  -webkit-text-fill-color: initial; /* Fixes text-clip inheritance */
-  color: #ffd700;
-  font-size: 1.1em;
-  text-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
-  display: inline-block;
-  vertical-align: middle;
-}
-
-/* Shimmer Animation Loop */
-@keyframes goldShimmer {
-  0% { background-position: 0% center; }
-  100% { background-position: 200% center; }
-}
-
