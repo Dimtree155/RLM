@@ -2004,7 +2004,6 @@ function App() {
                 <select value={coinGrantTarget} onChange={e => setCoinGrantTarget(e.target.value)}>
                   <option value="">Choose a member…</option>
                   {(staffRole === 'owner' ? ownerDirectory : staffMembers)
-                    .filter(member => (member.user_id || member.id) !== session.user.id)
                     .map(member => {
                       const memberId = member.user_id || member.id
                       return <option key={memberId} value={memberId}>{member.display_name || member.username || 'RLM member'}</option>
