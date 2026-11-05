@@ -224,3 +224,15 @@ img {
   flex-basis: 28px;
   font-size: 12px;
 }
+/* Gold text effect for clan owners */
+.owner-nametag {
+  color: #ffd700 !important; /* Solid Gold */
+  font-weight: bold !important;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6); /* Soft gold glow */
+}
+
+/* Crown styling to keep it tidy */
+.owner-crown {
+  margin-right: 4px;
+  display: inline-block;
+}
