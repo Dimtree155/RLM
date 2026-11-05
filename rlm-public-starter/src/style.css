@@ -235,3 +235,48 @@ img {
   margin-right: 4px;
   display: inline-block;
 }
+
+/* Clan Creator title and staff message bubble refinements */
+
+.equipped-title {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #ffd447;
+  font-weight: 850;
+  letter-spacing: .025em;
+}
+.clan-creator-title {
+  color: #8e5bff !important;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  text-shadow: 0 0 4px rgba(115,55,255,.95), 0 0 10px rgba(115,55,255,.75), 0 0 19px rgba(75,25,190,.65);
+}
+.staff-message-bubble {
+  width: 100%;
+  min-height: 94px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 13px 16px;
+  border: 1px solid rgba(154,119,205,.48);
+  border-radius: 16px 16px 16px 5px;
+  background: linear-gradient(145deg, rgba(100,67,139,.22), rgba(39,29,55,.92));
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 5px 16px rgba(0,0,0,.12);
+  outline: none;
+}
+.staff-message-bubble:focus {
+  border-color: #a77be8;
+  box-shadow: 0 0 0 3px rgba(142,91,255,.16), 0 5px 16px rgba(0,0,0,.12);
+}
+.staff-message-bubble::placeholder { color: #a99ab9; }
+.app.light-mode .staff-message-bubble {
+  background: #f3eef9;
+  color: #29213a;
+  border-color: #d6c5e9;
+}
