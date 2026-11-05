@@ -33,6 +33,21 @@ function ChatAvatar({ person, className = 'chat-avatar' }) {
   )
 }
 
+function MemberName({ person, role, className = '' }) {
+  const isOwner = role === 'owner'
+  const isStaff = ['owner', 'admin', 'moderator'].includes(role)
+
+  return (
+    <span className={`member-name ${isOwner ? 'owner-name' : ''} ${className}`.trim()}>
+      {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
+      <span>{person?.display_name || person?.username || 'RLM member'}</span>
+      {isStaff && !isOwner && (
+        <span className={`member-role-tag ${role}`}>{role}</span>
+      )}
+    </span>
+  )
+}
+
 function App() {
   const [session, setSession] = React.useState(null)
   const [email, setEmail] = React.useState('')
@@ -60,6 +75,7 @@ function App() {
   const [friendshipRows, setFriendshipRows] = React.useState([])
   const [loadingMembers, setLoadingMembers] = React.useState(false)
   const [friendshipBusy, setFriendshipBusy] = React.useState('')
+  const [memberRoles, setMemberRoles] = React.useState({})
 
   // Private messaging
   const [friends, setFriends] = React.useState([])
@@ -180,6 +196,34 @@ function App() {
     return () => {
       cancelled = true
     }
+  }, [session])
+
+  // Public role labels are read through a SECURITY DEFINER RPC that exposes
+  // only user IDs and role names. Do not grant broad SELECT on user_roles.
+  React.useEffect(() => {
+    let cancelled = false
+
+    async function loadPublicMemberRoles() {
+      if (!session || !supabase) {
+        setMemberRoles({})
+        return
+      }
+
+      const { data, error } = await supabase.rpc('get_public_member_roles')
+      if (cancelled) return
+
+      if (error) {
+        setStatus('Could not load member role badges: ' + error.message)
+        setMemberRoles({})
+      } else {
+        setMemberRoles(Object.fromEntries(
+          (data || []).map(item => [item.user_id, item.role])
+        ))
+      }
+    }
+
+    loadPublicMemberRoles()
+    return () => { cancelled = true }
   }, [session])
 
   async function refreshDirectory() {
@@ -1163,7 +1207,10 @@ function App() {
                   >
                     <ChatAvatar person={conversation.friend} />
                     <span className="chat-conversation-name">
-                      {displayName(conversation.friend)}
+                      <MemberName
+                        person={conversation.friend}
+                        role={memberRoles[conversation.friend.id]}
+                      />
                     </span>
                   </button>
                 ))
@@ -1176,7 +1223,12 @@ function App() {
                   <div className="chat-topbar">
                     <ChatAvatar person={selectedFriend} />
                     <div>
-                      <strong>{selectedName}</strong>
+                      <strong>
+                        <MemberName
+                          person={selectedFriend}
+                          role={memberRoles[selectedFriend?.id]}
+                        />
+                      </strong>
                       <small>Private conversation</small>
                     </div>
                   </div>
@@ -1206,7 +1258,19 @@ function App() {
 
                             <div className="chat-message-content">
                               <div className="chat-message-meta">
-                                <strong>{isOwn ? 'You' : selectedName}</strong>
+                                <strong>
+                                  {isOwn ? (
+                                    <MemberName
+                                      person={{ display_name: profile?.display_name || 'You' }}
+                                      role={memberRoles[session.user.id] || staffRole}
+                                    />
+                                  ) : (
+                                    <MemberName
+                                      person={selectedFriend}
+                                      role={memberRoles[selectedFriend?.id]}
+                                    />
+                                  )}
+                                </strong>
                                 <small>
                                   {new Date(message.created_at).toLocaleTimeString(
                                     [],
@@ -1385,7 +1449,9 @@ function App() {
 
               return (
                 <div className="panel" key={row.id}>
-                  <strong>{displayName(sender)}</strong>
+                  <strong>
+                    <MemberName person={sender} role={memberRoles[row.requester]} />
+                  </strong>
 
                   <div className="actions" style={{ marginTop: '10px' }}>
                     <button
@@ -1418,7 +1484,9 @@ function App() {
           ) : (
             accepted.map(friend => (
               <div className="panel" key={friend.id}>
-                <strong>{displayName(friend)}</strong>
+                <strong>
+                  <MemberName person={friend} role={memberRoles[friend.id]} />
+                </strong>
 
                 <button
                   className="secondary"
@@ -1494,7 +1562,9 @@ function App() {
                       marginBottom: '10px'
                     }}
                   >
-                    <strong>{displayName(sender)}</strong>
+                    <strong>
+                     <MemberName person={sender} role={memberRoles[row.requester]} />
+                   </strong>
 
                     <div className="actions">
                       <button
@@ -1565,7 +1635,9 @@ function App() {
                       flexWrap: 'wrap'
                     }}
                   >
-                    <strong>{displayName(member)}</strong>
+                    <strong>
+                      <MemberName person={member} role={memberRoles[member.id]} />
+                    </strong>
 
                     {session && relationshipWith(member.id)?.status !== 'blocked' && (
                       <button
@@ -1892,7 +1964,13 @@ function App() {
 
               <p><strong>Email:</strong> {session.user.email}</p>
               <p><strong>Username:</strong> {profile?.username || 'Not set yet'}</p>
-              <p><strong>Display name:</strong> {profile?.display_name || 'Not set yet'}</p>
+              <p>
+                <strong>Display name:</strong>{' '}
+                <MemberName
+                  person={{ display_name: profile?.display_name || 'Not set yet' }}
+                  role={staffRole}
+                />
+              </p>
               <p><strong>RLM role:</strong> {staffRole}</p>
 
               <label>
@@ -1937,6 +2015,62 @@ function App() {
   return (
     <div className={lightMode ? 'app light-mode' : 'app'}>
       <style>{`
+        .member-name {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          font-weight: 650;
+        }
+
+        .owner-name {
+          color: #ffd447 !important;
+          background: linear-gradient(100deg, #fff6bd 0%, #ffd447 28%, #e6a600 52%, #fff0a1 75%, #ffd447 100%);
+          background-size: 220% auto;
+          background-clip: text;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: ownerShine 3.2s linear infinite;
+          font-weight: 900;
+          filter: drop-shadow(0 0 5px rgba(255, 196, 36, 0.34));
+        }
+
+        .owner-crown {
+          display: inline-block;
+          font-size: 1.05em;
+          line-height: 1;
+          -webkit-text-fill-color: initial;
+          filter: drop-shadow(0 0 4px rgba(255, 211, 64, 0.65));
+        }
+
+        .member-role-tag {
+          display: inline-block;
+          padding: 2px 6px;
+          border-radius: 6px;
+          font-size: 0.65em;
+          line-height: 1.3;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          font-weight: 800;
+          color: #d8c9ff;
+          background: rgba(135, 94, 230, 0.2);
+          border: 1px solid rgba(173, 143, 255, 0.28);
+          -webkit-text-fill-color: initial;
+        }
+
+        .member-role-tag.admin {
+          color: #ffc878;
+          background: rgba(225, 151, 55, 0.14);
+          border-color: rgba(225, 151, 55, 0.3);
+        }
+
+        @keyframes ownerShine {
+          to { background-position: 220% center; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .owner-name { animation: none; }
+        }
+
         .app.light-mode {
           background: #f3f4fb;
           color: #202238;
@@ -2123,7 +2257,12 @@ function App() {
                 className="sidebar-chat-avatar"
               />
 
-              <span>{displayName(conversation.friend)}</span>
+              <span>
+                <MemberName
+                  person={conversation.friend}
+                  role={memberRoles[conversation.friend.id]}
+                />
+              </span>
             </button>
           ))
         )}
@@ -2160,9 +2299,12 @@ function App() {
             />
           )}
 
-          {session
-            ? (profile?.display_name || session.user.email)
-            : 'Guest'}
+          {session ? (
+            <MemberName
+              person={{ display_name: profile?.display_name || session.user.email }}
+              role={memberRoles[session.user.id] || staffRole}
+            />
+          ) : 'Guest'}
 
           <small>{session ? 'SIGNED IN' : 'NOT SIGNED IN'}</small>
         </div>
