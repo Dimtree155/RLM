@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createClient } from '@supabase/supabase-js'
+import ExtendedGames from './ExtendedGames.jsx'
 import './style.css'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -419,12 +420,16 @@ function App() {
   async function recordGame(gameKey) {
     if (!session || !supabase || progressBusy) return
     setProgressBusy(true)
-    const { data, error } = await supabase.rpc('rlm_record_game', { p_game_key: gameKey })
-    if (error) setStatus('Game finished, but reward could not be saved: ' + error.message)
+    const [{ data, error }, { data: xpData, error: xpError }] = await Promise.all([
+      supabase.rpc('rlm_record_game', { p_game_key: gameKey }),
+      supabase.rpc('rlm_award_minigame_xp', { p_game_key: gameKey, p_score: 0 })
+    ])
+    if (error) setStatus('Game finished, but coin reward could not be saved: ' + error.message)
     else {
       setProgressData(data?.progress || null)
-      setStatus(`Game recorded. You earned ${data?.coins_awarded || 0} coins.`)
+      setStatus(`Game recorded. You earned ${data?.coins_awarded || 0} coins${xpError ? '' : ` and ${xpData?.xp_awarded || 0} XP`}.`)
     }
+    if (xpError) setStatus(previous => `${previous} XP could not be saved: ${xpError.message}`)
     setProgressBusy(false)
   }
 
@@ -521,7 +526,7 @@ function App() {
   }
 
   React.useEffect(() => {
-    if (session && (section === 'Leaderboard' || section === 'Friends')) {
+    if (session && ['Leaderboard', 'Friends', 'Minigames'].includes(section)) {
       refreshDirectory()
     }
 
@@ -1789,6 +1794,7 @@ function App() {
           <p className="muted">Play casual games, earn a small coin reward, and make progress on daily quests.</p>
           <div className="progress-summary"><strong>🪙 {progressData?.stats?.coins ?? 100} coins</strong><span>🎮 {progressData?.stats?.games_played ?? 0} games played</span><span>🏆 {progressData?.stats?.games_won ?? 0} wins</span></div>
           <MiniGames onRecordGame={recordGame} />
+          <ExtendedGames supabase={supabase} session={session} members={members} staffRole={staffRole} onProgress={refreshProgress} />
           <p className="status">{status}</p>
           <p className="muted small-note">Game rewards have a short cooldown and a daily limit. These are casual rewards, not competitive anti-cheat scores.</p>
         </div>
