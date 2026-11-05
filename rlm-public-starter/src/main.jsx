@@ -33,18 +33,168 @@ function ChatAvatar({ person, className = 'chat-avatar' }) {
   )
 }
 
-function MemberName({ person, role, className = '' }) {
+function MemberName({ person, role, className = '', cosmetics = null }) {
   const isOwner = role === 'owner'
   const isStaff = ['owner', 'admin', 'moderator'].includes(role)
 
   return (
     <span className={`member-name ${isOwner ? 'owner-name' : ''} ${className}`.trim()}>
       {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
+      {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
       <span>{person?.display_name || person?.username || 'RLM member'}</span>
+      {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
+      {cosmetics?.title && <span className="equipped-title">{cosmetics.title}</span>}
       {isStaff && !isOwner && (
         <span className={`member-role-tag ${role}`}>{role}</span>
       )}
     </span>
+  )
+}
+
+
+function ProfileHover({ person, role, cosmetics, supabase, children }) {
+  const [open, setOpen] = React.useState(false)
+  const [stats, setStats] = React.useState(null)
+  const [loading, setLoading] = React.useState(false)
+  const [failed, setFailed] = React.useState(false)
+  const [cardPosition, setCardPosition] = React.useState({ top: 0, left: 0 })
+  const timer = React.useRef(null)
+
+  async function showProfile(event) {
+    const rect = event?.currentTarget?.getBoundingClientRect?.()
+    if (rect && typeof window !== 'undefined') {
+      setCardPosition({ top: Math.min(rect.bottom + 8, window.innerHeight - 230), left: Math.min(rect.left, window.innerWidth - 245) })
+    }
+    setOpen(true)
+    if (!person?.id || stats || loading || !supabase) return
+    setLoading(true)
+    const { data, error } = await supabase.rpc('rlm_get_public_profile', { p_user_id: person.id })
+    if (error) setFailed(true)
+    else setStats(Array.isArray(data) ? data[0] || null : data)
+    setLoading(false)
+  }
+
+  return (
+    <span className="profile-hover-wrap"
+      onMouseEnter={(event) => { clearTimeout(timer.current); showProfile(event) }}
+      onMouseLeave={() => { timer.current = setTimeout(() => setOpen(false), 180) }}
+      onFocus={showProfile}
+      onBlur={() => setOpen(false)}
+    >
+      {children || <MemberName person={person} role={role} cosmetics={cosmetics} />}
+      {open && (
+        <span className="profile-hover-card" role="status" style={{ top: cardPosition.top, left: cardPosition.left }}>
+          <span className="profile-hover-heading">
+            <strong>{person?.display_name || person?.username || 'RLM member'}</strong>
+            {role && <small>{role.toUpperCase()}</small>}
+          </span>
+          {loading ? <span className="muted">Loading stats…</span> : failed ? <span className="muted">Profile stats unavailable. Run the progression SQL migration.</span> : stats ? (
+            <>
+              {stats.title && <span className="profile-hover-title">{stats.title}</span>}
+              <span>🪙 {stats.coins ?? 0} coins</span>
+              <span>🎮 {stats.games_played ?? 0} games played</span>
+              <span>✦ {stats.quests_completed ?? 0} quests completed</span>
+              {stats.equipped_name_tag && <span>Tag: {stats.equipped_name_tag}</span>}
+              {stats.equipped_badge && <span>Badge: {stats.equipped_badge}</span>}
+            </>
+          ) : <span className="muted">No stats yet.</span>}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function MiniGames({ onRecordGame }) {
+  const [game, setGame] = React.useState('tic-tac-toe')
+  const [board, setBoard] = React.useState(Array(9).fill(''))
+  const [roundMessage, setRoundMessage] = React.useState('You are X. Try to beat the computer.')
+  const [reactionPhase, setReactionPhase] = React.useState('idle')
+  const [reactionStart, setReactionStart] = React.useState(0)
+  const [reactionResult, setReactionResult] = React.useState('')
+  const timerRef = React.useRef(null)
+
+  React.useEffect(() => () => clearTimeout(timerRef.current), [])
+
+  function winnerOf(cells) {
+    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]
+    for (const [a,b,c] of lines) if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a]
+    return cells.every(Boolean) ? 'draw' : null
+  }
+
+  function playCell(index) {
+    if (board[index] || winnerOf(board)) return
+    const next = [...board]
+    next[index] = 'X'
+    const humanResult = winnerOf(next)
+    if (humanResult) {
+      setBoard(next)
+      setRoundMessage(humanResult === 'X' ? 'You won! 🎉' : 'It is a draw.')
+      onRecordGame('tic-tac-toe')
+      return
+    }
+    const available = next.map((value, i) => value ? -1 : i).filter(i => i >= 0)
+    const botMove = available[Math.floor(Math.random() * available.length)]
+    next[botMove] = 'O'
+    const result = winnerOf(next)
+    setBoard(next)
+    if (result) {
+      setRoundMessage(result === 'O' ? 'The computer won. Try again!' : 'It is a draw.')
+      onRecordGame('tic-tac-toe')
+    } else setRoundMessage('Your turn — choose a square.')
+  }
+
+  function resetBoard() {
+    setBoard(Array(9).fill(''))
+    setRoundMessage('You are X. Try to beat the computer.')
+  }
+
+  function startReaction() {
+    clearTimeout(timerRef.current)
+    setReactionResult('Wait for GO…')
+    setReactionPhase('waiting')
+    timerRef.current = setTimeout(() => {
+      setReactionStart(Date.now())
+      setReactionPhase('go')
+      setReactionResult('GO! Click the button!')
+    }, 1200 + Math.floor(Math.random() * 1800))
+  }
+
+  function hitReaction() {
+    if (reactionPhase === 'waiting') {
+      clearTimeout(timerRef.current)
+      setReactionPhase('idle')
+      setReactionResult('Too early! Press Start and try again.')
+    } else if (reactionPhase === 'go') {
+      const ms = Date.now() - reactionStart
+      setReactionPhase('idle')
+      setReactionResult(`Your reaction time: ${ms} ms`)
+      onRecordGame('reaction')
+    }
+  }
+
+  return (
+    <div className="minigames-wrap">
+      <div className="game-tabs">
+        <button className={game === 'tic-tac-toe' ? 'primary' : 'secondary'} onClick={() => setGame('tic-tac-toe')}>⭕ Tic-tac-toe</button>
+        <button className={game === 'reaction' ? 'primary' : 'secondary'} onClick={() => setGame('reaction')}>⚡ Reaction test</button>
+      </div>
+      {game === 'tic-tac-toe' ? (
+        <div className="panel game-panel">
+          <h3>⭕ Tic-tac-toe</h3>
+          <p className="muted">Play as X against the computer. A completed round counts toward your daily game quests.</p>
+          <div className="tic-board">{board.map((cell, index) => <button key={index} className="tic-cell" onClick={() => playCell(index)} disabled={Boolean(cell) || Boolean(winnerOf(board))}>{cell}</button>)}</div>
+          <p>{roundMessage}</p>
+          <button className="secondary" onClick={resetBoard}>New round</button>
+        </div>
+      ) : (
+        <div className="panel game-panel">
+          <h3>⚡ Reaction test</h3>
+          <p className="muted">Press Start, wait for GO, then click as quickly as you can. Clicking early cancels the round.</p>
+          <div className="reaction-display">{reactionResult || 'Ready when you are'}</div>
+          {reactionPhase === 'idle' ? <button className="primary" onClick={startReaction}>Start</button> : <button className="primary" onClick={hitReaction}>{reactionPhase === 'waiting' ? 'Wait…' : 'CLICK!'}</button>}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -76,6 +226,14 @@ function App() {
   const [loadingMembers, setLoadingMembers] = React.useState(false)
   const [friendshipBusy, setFriendshipBusy] = React.useState('')
   const [memberRoles, setMemberRoles] = React.useState({})
+  const [memberCosmetics, setMemberCosmetics] = React.useState({})
+  const [progressData, setProgressData] = React.useState(null)
+  const [progressLoading, setProgressLoading] = React.useState(false)
+  const [progressBusy, setProgressBusy] = React.useState(false)
+  const [ownerRoleTarget, setOwnerRoleTarget] = React.useState('')
+  const [ownerRoleChoice, setOwnerRoleChoice] = React.useState('moderator')
+  const [titleTarget, setTitleTarget] = React.useState('')
+  const [titleValue, setTitleValue] = React.useState('')
 
   // Private messaging
   const [friends, setFriends] = React.useState([])
@@ -96,6 +254,7 @@ function App() {
   // Staff permissions and moderation
   const [staffRole, setStaffRole] = React.useState('member')
   const [staffMembers, setStaffMembers] = React.useState([])
+  const [ownerDirectory, setOwnerDirectory] = React.useState([])
   const [moderationActions, setModerationActions] = React.useState([])
   const [staffSearch, setStaffSearch] = React.useState('')
   const [staffTarget, setStaffTarget] = React.useState('')
@@ -225,6 +384,102 @@ function App() {
     loadPublicMemberRoles()
     return () => { cancelled = true }
   }, [session])
+
+
+  React.useEffect(() => {
+    let cancelled = false
+    async function loadCosmetics() {
+      if (!session || !supabase) { setMemberCosmetics({}); return }
+      const { data, error } = await supabase.rpc('rlm_get_public_member_cosmetics')
+      if (cancelled) return
+      if (error) { setStatus('Could not load member cosmetics: ' + error.message); return }
+      setMemberCosmetics(Object.fromEntries((data || []).map(row => [row.user_id, row])))
+    }
+    loadCosmetics()
+    return () => { cancelled = true }
+  }, [session])
+
+  async function refreshProgress() {
+    if (!session || !supabase) { setProgressData(null); return }
+    setProgressLoading(true)
+    const { data, error } = await supabase.rpc('rlm_get_my_progress')
+    if (error) setStatus('Could not load progression: ' + error.message)
+    else setProgressData(data)
+    setProgressLoading(false)
+  }
+
+  React.useEffect(() => {
+    if (session && ['Home','Minigames','Quests','Coin shop','My profile'].includes(section)) refreshProgress()
+    if (!session) setProgressData(null)
+  }, [session, section])
+
+  async function recordGame(gameKey) {
+    if (!session || !supabase || progressBusy) return
+    setProgressBusy(true)
+    const { data, error } = await supabase.rpc('rlm_record_game', { p_game_key: gameKey })
+    if (error) setStatus('Game finished, but reward could not be saved: ' + error.message)
+    else {
+      setProgressData(data?.progress || null)
+      setStatus(`Game recorded. You earned ${data?.coins_awarded || 0} coins.`)
+    }
+    setProgressBusy(false)
+  }
+
+  async function claimQuest(questId) {
+    if (!supabase || progressBusy) return
+    setProgressBusy(true)
+    const { data, error } = await supabase.rpc('rlm_claim_quest', { p_quest_id: questId })
+    if (error) setStatus('Could not claim quest: ' + error.message)
+    else { setProgressData(data); setStatus('Quest reward claimed!') }
+    setProgressBusy(false)
+  }
+
+  async function buyCosmetic(itemId) {
+    if (!supabase || progressBusy) return
+    setProgressBusy(true)
+    const { data, error } = await supabase.rpc('rlm_buy_cosmetic', { p_item_id: itemId })
+    if (error) setStatus('Purchase failed: ' + error.message)
+    else { setProgressData(data); setStatus('Item purchased! Equip it from your collection.') }
+    setProgressBusy(false)
+  }
+
+  async function equipCosmetic(itemId) {
+    if (!supabase || progressBusy) return
+    setProgressBusy(true)
+    const { data, error } = await supabase.rpc('rlm_equip_cosmetic', { p_item_id: itemId })
+    if (error) setStatus('Could not equip item: ' + error.message)
+    else {
+      setProgressData(data)
+      const { data: cosmetics } = await supabase.rpc('rlm_get_public_member_cosmetics')
+      setMemberCosmetics(Object.fromEntries((cosmetics || []).map(row => [row.user_id, row])))
+      setStatus('Cosmetic equipped!')
+    }
+    setProgressBusy(false)
+  }
+
+  async function ownerChangeRole() {
+    if (staffRole !== 'owner' || !ownerRoleTarget || !supabase) return
+    setStaffBusy(true)
+    const { error } = await supabase.rpc('rlm_owner_set_staff_role', {
+      p_target_user_id: ownerRoleTarget,
+      p_role: ownerRoleChoice
+    })
+    if (error) setStatus('Could not update staff role: ' + error.message)
+    else { setStatus(`Member role changed to ${ownerRoleChoice}.`); setOwnerRoleTarget(''); await refreshStaffData(); const { data } = await supabase.rpc('get_public_member_roles'); setMemberRoles(Object.fromEntries((data || []).map(row => [row.user_id,row.role]))) }
+    setStaffBusy(false)
+  }
+
+  async function ownerGrantTitle() {
+    if (staffRole !== 'owner' || !titleTarget || !titleValue.trim() || !supabase) return
+    setStaffBusy(true)
+    const { error } = await supabase.rpc('rlm_owner_grant_title', {
+      p_target_user_id: titleTarget,
+      p_title: titleValue.trim()
+    })
+    if (error) setStatus('Could not grant title: ' + error.message)
+    else { setStatus('Title granted!'); setTitleValue(''); setTitleTarget(''); const { data } = await supabase.rpc('rlm_get_public_member_cosmetics'); setMemberCosmetics(Object.fromEntries((data || []).map(row => [row.user_id,row]))) }
+    setStaffBusy(false)
+  }
 
   async function refreshDirectory() {
     if (!session || !supabase) {
@@ -639,9 +894,10 @@ function App() {
 
     setStaffLoading(true)
 
-    const [membersResult, actionsResult] = await Promise.all([
+    const [membersResult, actionsResult, ownerDirectoryResult] = await Promise.all([
       supabase.rpc('get_staff_members'),
-      supabase.rpc('get_active_moderation_actions')
+      supabase.rpc('get_active_moderation_actions'),
+      staffRole === 'owner' ? supabase.rpc('rlm_owner_list_members') : Promise.resolve({ data: [], error: null })
     ])
 
     if (membersResult.error) {
@@ -655,6 +911,8 @@ function App() {
     } else {
       setModerationActions(actionsResult.data || [])
     }
+    if (ownerDirectoryResult.error) setStatus('Could not load owner member list: ' + ownerDirectoryResult.error.message)
+    else setOwnerDirectory(ownerDirectoryResult.data || [])
 
     setStaffLoading(false)
   }
@@ -1210,6 +1468,7 @@ function App() {
                       <MemberName
                         person={conversation.friend}
                         role={memberRoles[conversation.friend.id]}
+                        cosmetics={memberCosmetics[conversation.friend.id]}
                       />
                     </span>
                   </button>
@@ -1260,15 +1519,9 @@ function App() {
                               <div className="chat-message-meta">
                                 <strong>
                                   {isOwn ? (
-                                    <MemberName
-                                      person={{ display_name: profile?.display_name || 'You' }}
-                                      role={memberRoles[session.user.id] || staffRole}
-                                    />
+                                    <ProfileHover supabase={supabase} person={{ id: session.user.id, display_name: profile?.display_name || 'You' }} role={memberRoles[session.user.id] || staffRole} cosmetics={memberCosmetics[session.user.id]} />
                                   ) : (
-                                    <MemberName
-                                      person={selectedFriend}
-                                      role={memberRoles[selectedFriend?.id]}
-                                    />
+                                    <ProfileHover supabase={supabase} person={selectedFriend} role={memberRoles[selectedFriend?.id]} cosmetics={memberCosmetics[selectedFriend?.id]} />
                                   )}
                                 </strong>
                                 <small>
@@ -1370,7 +1623,7 @@ function App() {
 
                     <div className="clan-message-content">
                       <div className="chat-message-meta">
-                        <strong><MemberName person={message.sender} role={memberRoles[message.sender?.id]} /></strong>
+                        <strong><ProfileHover supabase={supabase} person={message.sender} role={memberRoles[message.sender?.id]} cosmetics={memberCosmetics[message.sender?.id]} /></strong>
                         <small>
                           {new Date(message.created_at).toLocaleString(
                             [],
@@ -1505,17 +1758,15 @@ function App() {
     }
 
     if (section === 'Minigames') {
+      if (!session) return <div className="panel"><h2>🎮 Minigames</h2><p>Please sign in to play and save progress.</p></div>
       return (
         <div className="panel">
           <h2>🎮 Minigames</h2>
-          <p className="muted">Choose a game to play.</p>
-
-          <div className="grid">
-            <div className="panel"><h3>⚔️ Arena</h3><p>Coming soon!</p></div>
-            <div className="panel"><h3>♟ Chess</h3><p>Coming soon!</p></div>
-            <div className="panel"><h3>⭕ Tic-tac-toe</h3><p>Coming soon!</p></div>
-            <div className="panel"><h3>🏎️ Car racer</h3><p>Coming soon!</p></div>
-          </div>
+          <p className="muted">Play casual games, earn a small coin reward, and make progress on daily quests.</p>
+          <div className="progress-summary"><strong>🪙 {progressData?.stats?.coins ?? 100} coins</strong><span>🎮 {progressData?.stats?.games_played ?? 0} games played</span><span>🏆 {progressData?.stats?.games_won ?? 0} wins</span></div>
+          <MiniGames onRecordGame={recordGame} />
+          <p className="status">{status}</p>
+          <p className="muted small-note">Game rewards have a short cooldown and a daily limit. These are casual rewards, not competitive anti-cheat scores.</p>
         </div>
       )
     }
@@ -1636,7 +1887,7 @@ function App() {
                     }}
                   >
                     <strong>
-                      <MemberName person={member} role={memberRoles[member.id]} />
+                      <ProfileHover supabase={supabase} person={member} role={memberRoles[member.id]} cosmetics={memberCosmetics[member.id]} />
                     </strong>
 
                     {session && relationshipWith(member.id)?.status !== 'blocked' && (
@@ -1698,6 +1949,27 @@ function App() {
               Your available actions are controlled by your staff role and the database permission checks.
             </p>
           </div>
+
+          {staffRole === 'owner' && (
+            <div className="panel owner-tools-panel">
+              <h3>👑 Owner tools</h3>
+              <div className="owner-tool-grid">
+                <div>
+                  <h4>Grant or change staff role</h4>
+                  <label>Member<select value={ownerRoleTarget} onChange={e => setOwnerRoleTarget(e.target.value)}><option value="">Choose a member…</option>{ownerDirectory.filter(m => m.user_id !== session.user.id).map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.user_id} — {m.role}</option>)}</select></label>
+                  <label>Role<select value={ownerRoleChoice} onChange={e => setOwnerRoleChoice(e.target.value)}><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="member">Remove staff (Member)</option></select></label>
+                  <button className="primary" disabled={staffBusy || !ownerRoleTarget} onClick={ownerChangeRole}>Save role</button>
+                </div>
+                <div>
+                  <h4>Give a member a custom title</h4>
+                  <label>Member<select value={titleTarget} onChange={e => setTitleTarget(e.target.value)}><option value="">Choose a member…</option>{ownerDirectory.map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.user_id}</option>)}</select></label>
+                  <label>Title<input maxLength={32} value={titleValue} onChange={e => setTitleValue(e.target.value)} placeholder="e.g. Clan Legend" /></label>
+                  <button className="primary" disabled={staffBusy || !titleTarget || !titleValue.trim()} onClick={ownerGrantTitle}>Grant title</button>
+                  <p className="muted">Only the owner can grant titles or change staff roles.</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="panel">
             <h3>Apply a moderation action</h3>
@@ -1896,21 +2168,46 @@ function App() {
     }
 
     if (section === 'Quests') {
+      if (!session) return <div className="panel"><h2>✦ Quests</h2><p>Please sign in to track quests.</p></div>
+      const quests = progressData?.quests || []
       return (
         <div className="panel">
-          <h2>✦ Quests</h2>
-          <p className="muted">Complete challenges and earn rewards.</p>
-          <p>Quests are coming soon!</p>
+          <h2>✦ Daily quests</h2>
+          <p className="muted">Complete today's challenges to earn coins. Progress resets each UTC day.</p>
+          <div className="progress-summary"><strong>🪙 {progressData?.stats?.coins ?? 100} coins</strong><span>Completed: {progressData?.stats?.quests_completed ?? 0}</span></div>
+          {progressLoading ? <p className="muted">Loading quests…</p> : quests.map(quest => (
+            <div className="quest-card" key={quest.id}>
+              <div><h3>{quest.name}</h3><p className="muted">{quest.description}</p><strong>Reward: 🪙 {quest.reward_coins}</strong></div>
+              <div className="quest-progress"><span>{Math.min(quest.progress,quest.target_count)} / {quest.target_count}</span><div className="progress-track"><span style={{width:`${Math.min(100,quest.progress / quest.target_count * 100)}%`}} /></div>
+              <button className="primary" disabled={progressBusy || quest.claimed || quest.progress < quest.target_count} onClick={() => claimQuest(quest.id)}>{quest.claimed ? 'Claimed' : quest.progress >= quest.target_count ? 'Claim reward' : 'In progress'}</button></div>
+            </div>
+          ))}
+          <p className="status">{status}</p>
         </div>
       )
     }
 
     if (section === 'Coin shop') {
+      if (!session) return <div className="panel"><h2>🛍 Coin shop</h2><p>Please sign in to use the shop.</p></div>
+      const ownedIds = new Set((progressData?.owned || []).map(item => item.item_id))
+      const equippedIds = new Set((progressData?.owned || []).filter(item => item.equipped).map(item => item.item_id))
       return (
         <div className="panel">
           <h2>🛍 Coin shop</h2>
-          <p className="muted">Spend your RLM coins on cosmetics and items.</p>
-          <p>The shop is coming soon!</p>
+          <p className="muted">Buy name tags and badges with coins earned in RLM games and quests.</p>
+          <div className="progress-summary"><strong>🪙 {progressData?.stats?.coins ?? 100} coins</strong></div>
+          <div className="shop-grid">
+            {(progressData?.shop || []).map(item => (
+              <div className="shop-item" key={item.id}>
+                <div className="shop-preview">{item.item_type === 'badge' ? (item.style_key === 'star' ? '⭐' : item.style_key === 'flame' ? '🔥' : '💎') : <span className={`equipped-name-tag tag-${item.style_key}`}>{item.name}</span>}</div>
+                <h3>{item.name}</h3><p className="muted">{item.item_type === 'badge' ? 'Profile badge' : 'Name tag'}</p><strong>🪙 {item.price}</strong>
+                {ownedIds.has(item.id) ? <button className="secondary" disabled={progressBusy || equippedIds.has(item.id)} onClick={() => equipCosmetic(item.id)}>{equippedIds.has(item.id) ? 'Equipped' : 'Equip'}</button> : <button className="primary" disabled={progressBusy || (progressData?.stats?.coins ?? 100) < item.price} onClick={() => buyCosmetic(item.id)}>Buy</button>}
+              </div>
+            ))}
+          </div>
+          <h3>Your collection</h3>
+          {(progressData?.owned || []).length === 0 ? <p className="muted">You haven't bought any cosmetics yet.</p> : <div className="owned-list">{(progressData?.owned || []).map(owned => { const item = (progressData?.shop || []).find(x => x.id === owned.item_id); return <span key={owned.item_id}>{item?.name || owned.item_id} {owned.equipped ? '✓ Equipped' : ''}</span> })}</div>}
+          <p className="status">{status}</p>
         </div>
       )
     }
@@ -1969,6 +2266,7 @@ function App() {
                 <MemberName
                   person={{ display_name: profile?.display_name || 'Not set yet' }}
                   role={staffRole}
+                  cosmetics={memberCosmetics[session.user.id]}
                 />
               </p>
               <p><strong>RLM role:</strong> {staffRole}</p>
@@ -2070,6 +2368,43 @@ function App() {
         @media (prefers-reduced-motion: reduce) {
           .owner-name { animation: none; }
         }
+
+
+        .equipped-name-tag, .equipped-title { display:inline-flex; align-items:center; padding:2px 6px; border-radius:6px; font-size:.65em; font-weight:800; letter-spacing:.03em; -webkit-text-fill-color:initial; }
+        .equipped-title { color:#d7c7ff; background:rgba(130,90,220,.18); border:1px solid rgba(160,130,240,.35); }
+        .tag-neon { color:#9ffcff; background:rgba(35,220,255,.12); border:1px solid rgba(35,220,255,.45); }
+        .tag-gold { color:#ffd447; background:rgba(255,200,45,.12); border:1px solid rgba(255,200,45,.45); }
+        .tag-cyber { color:#e2a8ff; background:rgba(190,80,255,.13); border:1px solid rgba(190,80,255,.45); }
+        .equipped-badge { font-size:.95em; -webkit-text-fill-color:initial; }
+        .profile-hover-wrap { position:relative; display:inline-flex; cursor:pointer; }
+        .profile-hover-card { position:fixed; z-index:1000; left:0; top:calc(100% + 8px); width:220px; display:flex; flex-direction:column; gap:7px; padding:12px; border-radius:12px; background:#19152a; border:1px solid rgba(170,140,255,.38); box-shadow:0 12px 35px rgba(0,0,0,.4); color:#f5f1ff; font-size:12px; font-weight:500; white-space:normal; }
+        .profile-hover-heading { display:flex; justify-content:space-between; gap:8px; align-items:center; border-bottom:1px solid rgba(255,255,255,.12); padding-bottom:7px; }
+        .profile-hover-heading small { color:#b99cff; }
+        .profile-hover-title { color:#ffd447; font-weight:800; }
+        .progress-summary { display:flex; flex-wrap:wrap; gap:14px; padding:12px; margin:12px 0; border-radius:10px; background:rgba(130,90,220,.12); }
+        .minigames-wrap { margin-top:16px; }
+        .game-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+        .game-panel { text-align:center; }
+        .tic-board { display:grid; grid-template-columns:repeat(3, minmax(65px, 90px)); justify-content:center; gap:7px; margin:18px auto; }
+        .tic-cell { height:78px; border-radius:10px; border:1px solid rgba(170,140,255,.4); background:rgba(120,90,200,.14); color:inherit; font-size:2rem; font-weight:800; cursor:pointer; }
+        .tic-cell:disabled { cursor:default; opacity:.85; }
+        .reaction-display { min-height:60px; display:grid; place-items:center; margin:18px auto; padding:12px; max-width:480px; border-radius:12px; background:rgba(120,90,200,.14); font-size:1.15rem; font-weight:750; }
+        .quest-card, .shop-item { border:1px solid rgba(150,140,200,.25); border-radius:12px; padding:15px; margin:12px 0; }
+        .quest-card { display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+        .quest-card h3, .shop-item h3 { margin:0 0 6px; }
+        .quest-progress { min-width:150px; display:flex; flex-direction:column; gap:6px; }
+        .progress-track { height:8px; border-radius:20px; overflow:hidden; background:rgba(150,140,200,.2); }
+        .progress-track span { display:block; height:100%; background:#9b75ff; border-radius:20px; }
+        .shop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin:16px 0; }
+        .shop-item { display:flex; flex-direction:column; gap:8px; }
+        .shop-preview { min-height:48px; display:grid; place-items:center; font-size:1.8rem; }
+        .owned-list { display:flex; flex-wrap:wrap; gap:8px; }
+        .owned-list span { padding:6px 9px; border-radius:8px; background:rgba(130,90,220,.14); }
+        .owner-tool-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px; }
+        .owner-tool-grid h4 { margin:8px 0; }
+        .small-note { font-size:.82rem; }
+        .app.light-mode .profile-hover-card { background:#fff; color:#242238; border-color:#d9d0f5; }
+        .app.light-mode .quest-card, .app.light-mode .shop-item { border-color:#e2e4ef; }
 
         .app.light-mode {
           background: #f3f4fb;
