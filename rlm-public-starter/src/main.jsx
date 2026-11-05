@@ -43,7 +43,7 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
       {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
       <span>{person?.display_name || person?.username || 'RLM member'}</span>
       {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
-      {cosmetics?.title && <span className="equipped-title">{cosmetics.title}</span>}
+      {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
       {isStaff && !isOwner && (
         <span className={`member-role-tag ${role}`}>{role}</span>
       )}
@@ -90,7 +90,7 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
           </span>
           {loading ? <span className="muted">Loading stats…</span> : failed ? <span className="muted">Profile stats unavailable. Run the progression SQL migration.</span> : stats ? (
             <>
-              {stats.title && <span className="profile-hover-title">{stats.title}</span>}
+              {stats.title && <span className={stats.title.trim().toLowerCase() === 'clan creator' ? 'profile-hover-title clan-creator-title' : 'profile-hover-title'}>{stats.title}</span>}
               <span>🪙 {stats.coins ?? 0} coins</span>
               <span>🎮 {stats.games_played ?? 0} games played</span>
               <span>✦ {stats.quests_completed ?? 0} quests completed</span>
@@ -263,6 +263,9 @@ function App() {
   const [timeoutMinutes, setTimeoutMinutes] = React.useState('60')
   const [staffLoading, setStaffLoading] = React.useState(false)
   const [staffBusy, setStaffBusy] = React.useState(false)
+  const [coinGrantTarget, setCoinGrantTarget] = React.useState('')
+  const [coinGrantAmount, setCoinGrantAmount] = React.useState('100')
+  const [coinGrantReason, setCoinGrantReason] = React.useState('')
   const [suspension, setSuspension] = React.useState(null)
 
   const isStaff = ['owner', 'admin', 'moderator'].includes(staffRole)
@@ -922,6 +925,27 @@ function App() {
       refreshStaffData()
     }
   }, [section, isStaff])
+
+  async function grantMemberCoins() {
+    if (!session || !supabase || !['owner', 'admin'].includes(staffRole)) return
+    const amount = Number(coinGrantAmount)
+    if (!coinGrantTarget || !Number.isSafeInteger(amount) || amount < 1 || amount > 10000) {
+      setStatus('Choose a member and a whole-number amount from 1 to 10,000.')
+      return
+    }
+    setStaffBusy(true)
+    const { error } = await supabase.rpc('rlm_staff_grant_coins', {
+      p_target_user_id: coinGrantTarget,
+      p_amount: amount,
+      p_reason: coinGrantReason.trim().slice(0, 200)
+    })
+    setStaffBusy(false)
+    if (error) setStatus('Could not grant coins: ' + error.message)
+    else {
+      setStatus(`Granted ${amount} coins.`)
+      setCoinGrantReason('')
+    }
+  }
 
   async function applyStaffAction(e) {
     e.preventDefault()
@@ -1971,6 +1995,28 @@ function App() {
             </div>
           )}
 
+          {['owner', 'admin'].includes(staffRole) && (
+            <div className="panel">
+              <h3>🪙 Give coins</h3>
+              <p className="muted">Grant coins to a clanmate. The database checks your role and records each grant.</p>
+              <label>
+                Member
+                <select value={coinGrantTarget} onChange={e => setCoinGrantTarget(e.target.value)}>
+                  <option value="">Choose a member…</option>
+                  {(staffRole === 'owner' ? ownerDirectory : staffMembers)
+                    .filter(member => (member.user_id || member.id) !== session.user.id)
+                    .map(member => {
+                      const memberId = member.user_id || member.id
+                      return <option key={memberId} value={memberId}>{member.display_name || member.username || 'RLM member'}</option>
+                    })}
+                </select>
+              </label>
+              <label>Amount (1–10,000)<input type="number" min="1" max="10000" step="1" value={coinGrantAmount} onChange={e => setCoinGrantAmount(e.target.value)} /></label>
+              <label>Reason (optional)<input maxLength={200} value={coinGrantReason} onChange={e => setCoinGrantReason(e.target.value)} placeholder="Tournament reward, event prize…" /></label>
+              <button className="primary" disabled={staffBusy || !coinGrantTarget} onClick={grantMemberCoins}>Grant coins</button>
+            </div>
+          )}
+
           <div className="panel">
             <h3>Apply a moderation action</h3>
 
@@ -2047,6 +2093,7 @@ function App() {
               <label>
                 Reason
                 <textarea
+                  className="staff-message-bubble"
                   maxLength={500}
                   rows={4}
                   placeholder="Explain why this moderation action is being applied..."
@@ -2370,8 +2417,11 @@ function App() {
         }
 
 
-        .equipped-name-tag, .equipped-title { display:inline-flex; align-items:center; padding:2px 6px; border-radius:6px; font-size:.65em; font-weight:800; letter-spacing:.03em; -webkit-text-fill-color:initial; }
-        .equipped-title { color:#d7c7ff; background:rgba(130,90,220,.18); border:1px solid rgba(160,130,240,.35); }
+        .equipped-name-tag { display:inline-flex; align-items:center; padding:2px 6px; border-radius:6px; font-size:.65em; font-weight:800; letter-spacing:.03em; -webkit-text-fill-color:initial; }
+        .equipped-title { display:inline; padding:0; border:0; border-radius:0; background:transparent; color:#ffd447; font-size:.72em; font-weight:850; letter-spacing:.025em; -webkit-text-fill-color:#ffd447; }
+        .clan-creator-title { color:#8e5bff !important; -webkit-text-fill-color:#8e5bff !important; background:transparent !important; border:0 !important; padding:0 !important; text-shadow:0 0 4px rgba(115,55,255,.95), 0 0 10px rgba(115,55,255,.75), 0 0 19px rgba(75,25,190,.65); }
+        .profile-hover-title { color:#ffd447; font-weight:850; }
+        .profile-hover-title.clan-creator-title { color:#8e5bff; -webkit-text-fill-color:#8e5bff; }
         .tag-neon { color:#9ffcff; background:rgba(35,220,255,.12); border:1px solid rgba(35,220,255,.45); }
         .tag-gold { color:#ffd447; background:rgba(255,200,45,.12); border:1px solid rgba(255,200,45,.45); }
         .tag-cyber { color:#e2a8ff; background:rgba(190,80,255,.13); border:1px solid rgba(190,80,255,.45); }
