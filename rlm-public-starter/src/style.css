@@ -314,3 +314,29 @@ img {
 .race-opponent{display:grid;grid-template-columns:1fr auto;gap:6px;font-size:12px;align-items:center}
 .race-opponent .race-track{grid-column:1/-1}
 @media(max-width:720px){.solo-chess-layout,.race-game-layout{grid-template-columns:1fr}.solo-chess-board{max-width:100%}.solo-chess-info{grid-template-columns:1fr}.weapon-grid{grid-template-columns:1fr}.arena-hud{justify-content:flex-start}.road-view{height:440px;min-height:360px}}
+
+/* RLM Formula Racing */
+.f1-canvas {
+  display: block;
+  width: 100%;
+  max-width: 860px;
+  height: auto;
+  margin: 14px auto;
+  border: 1px solid rgba(148,163,184,.28);
+  border-radius: 14px;
+  background: #12351f;
+  touch-action: none;
+}
+.f1-hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+}
+.f1-hud strong {
+  padding: 8px 12px;
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 9px;
+  background: rgba(15,23,42,.55);
+}
