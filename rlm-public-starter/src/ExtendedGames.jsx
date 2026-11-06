@@ -114,7 +114,7 @@ function ArenaShooter({ onFinish }) {
   function buy(item) {
     const w=worldRef.current
     if (!w || w.status!=='shop' || credits<item.cost) return
-    setCredits(v=>v-item.cost); w.coins-=item.cost; w.weapon=item.name; w.damage=item.damage; w.rate=item.rate; setWeapon(item.name); w.wave+=1; w.need=6+(w.wave-1)*3; w.spawned=0; w.status='playing'; setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name,coins:w.coins})); setNotice(`Wave ${w.wave} — ${item.name} equipped.`)
+    setCredits(v=>v-item.cost); w.coins-=item.cost; w.weapon=item.name; w.damage=item.damage; w.rate=item.rate; setWeapon(item.name); w.wave+=1; w.need=6+(w.wave-1)*3; w.spawned=0; w.status='playing'; setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name,coins:w.coins})); setNotice(`Wave ${w.wave} — ${item.name} equipped.`); setRunId(v=>v+1)
   }
   React.useEffect(()=>{
     const canvas=canvasRef.current, ctx=canvas?.getContext('2d'), w=worldRef.current
@@ -157,7 +157,7 @@ function ArenaShooter({ onFinish }) {
     <p className="muted">{notice}</p>
     {hud.status==='ready'&&<button className="primary" onClick={start}>Start survival</button>}
     {hud.status==='over'&&<div className="arena-shop"><h3>Run complete</h3><p>Score: {hud.score} · Monsters defeated: {hud.kills} · Run credits: {credits}</p><button className="primary" onClick={start}>Play again</button></div>}
-    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — weapon shop</h3><p className="muted">Credits are earned in this run and are not deducted from your account balance.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.name}><strong>{item.name}</strong><span>{item.damage} damage · {Math.round(1000/item.rate)} shots/sec</span><span>{item.cost===0?'Free':`${item.cost} credits`}</span><button className="primary" disabled={credits<item.cost} onClick={()=>buy(item)}>{item.cost===0?'Continue':`Buy · ${item.cost}`}</button></div>)}</div><button className="secondary" onClick={()=>{const x=worldRef.current;if(x){x.wave++;x.need=6+(x.wave-1)*3;x.spawned=0;x.status='playing';setHud(h=>({...h,wave:x.wave,status:'playing'}));setNotice(`Wave ${x.wave} — keep moving!`)}}}>Continue with current weapon</button></div>}
+    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — weapon shop</h3><p className="muted">Credits are earned in this run and are not deducted from your account balance.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.name}><strong>{item.name}</strong><span>{item.damage} damage · {Math.round(1000/item.rate)} shots/sec</span><span>{item.cost===0?'Free':`${item.cost} credits`}</span><button className="primary" disabled={credits<item.cost} onClick={()=>buy(item)}>{item.cost===0?'Continue':`Buy · ${item.cost}`}</button></div>)}</div><button className="secondary" onClick={()=>{const x=worldRef.current;if(x){x.wave++;x.need=6+(x.wave-1)*3;x.spawned=0;x.status='playing';setHud(h=>({...h,wave:x.wave,status:'playing'}));setNotice(`Wave ${x.wave} — keep moving!`);setRunId(v=>v+1)}}}>Continue with current weapon</button></div>}
   </div>
 }
 
