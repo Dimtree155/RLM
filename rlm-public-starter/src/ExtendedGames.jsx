@@ -98,23 +98,50 @@ function SoloChess({ onFinish }) {
   </div>
 }
 
-function ArenaShooter({ onFinish }) {
+function ArenaShooter({ onFinish, supabase, playerStats, onStatsRefresh }) {
   const canvasRef = React.useRef(null)
   const worldRef = React.useRef(null)
-  const [hud,setHud] = React.useState({wave:1,score:0,hp:100,coins:0,kills:0,status:'ready',weapon:'Pistol'})
-  const [credits,setCredits] = React.useState(0)
+  const [hud,setHud] = React.useState({wave:1,score:0,hp:100,kills:0,status:'ready',weapon:'Pistol'})
+  const [owned,setOwned] = React.useState(['arena_pistol'])
+  const [shopBusy,setShopBusy] = React.useState(false)
+  const [shopMessage,setShopMessage] = React.useState('')
   const [weapon,setWeapon] = React.useState('Pistol')
   const [notice,setNotice] = React.useState('WASD to move · Mouse to aim and shoot · Space also fires')
   const [runId,setRunId] = React.useState(0)
-  const weapons = [{name:'Pistol',cost:0,damage:1,rate:260},{name:'Burst rifle',cost:30,damage:1,rate:130},{name:'Plasma blaster',cost:65,damage:3,rate:300}]
-  const start = () => {
-    worldRef.current = {player:{x:420,y:240,r:13,hp:100},enemies:[],bullets:[],keys:{},mouse:{x:620,y:240,down:false},wave:1,score:0,coins:0,kills:0,spawned:0,need:6,spawnClock:0,lastShot:0,lastHud:0,status:'playing',weapon:'Pistol',damage:1,rate:260}
-    setHud({wave:1,score:0,hp:100,coins:0,kills:0,status:'playing',weapon:'Pistol'}); setCredits(0); setWeapon('Pistol'); setNotice('Wave 1 — clear all monsters!'); setRunId(v=>v+1)
+  const weapons = [
+    {code:'arena_pistol',name:'Pistol',cost:0,damage:1,rate:260,desc:'Reliable starter sidearm'},
+    {code:'arena_burst_rifle',name:'Burst rifle',cost:150,damage:1,rate:125,desc:'Fast firing for close and mid range'},
+    {code:'arena_shotgun',name:'Scattergun',cost:220,damage:4,rate:620,desc:'Heavy close-range damage'},
+    {code:'arena_plasma_blaster',name:'Plasma blaster',cost:350,damage:3,rate:300,desc:'Powerful energy shots'}
+  ]
+  React.useEffect(()=>{
+    let alive=true
+    async function loadOwned(){
+      if(!supabase)return
+      const {data,error}=await supabase.from('user_inventory').select('item_code').eq('user_id',(await supabase.auth.getUser()).data.user?.id)
+      if(alive&&!error)setOwned(['arena_pistol',...(data||[]).map(x=>x.item_code).filter(x=>weapons.some(w=>w.code===x))])
+    }
+    loadOwned()
+    return()=>{alive=false}
+  },[supabase])
+  async function buyWeapon(item){
+    if(item.code==='arena_pistol'||owned.includes(item.code)||shopBusy)return
+    setShopBusy(true);setShopMessage('')
+    const {data,error}=await supabase.rpc('rlm_buy_arena_weapon',{p_item_code:item.code})
+    setShopBusy(false)
+    if(error){setShopMessage(`Purchase failed: ${error.message}`);return}
+    setOwned(v=>[...v,item.code]);setShopMessage(`${item.name} unlocked!`);onStatsRefresh?.()
   }
-  function buy(item) {
-    const w=worldRef.current
-    if (!w || w.status!=='shop' || credits<item.cost) return
-    setCredits(v=>v-item.cost); w.coins-=item.cost; w.weapon=item.name; w.damage=item.damage; w.rate=item.rate; setWeapon(item.name); w.wave+=1; w.need=6+(w.wave-1)*3; w.spawned=0; w.status='playing'; setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name,coins:w.coins})); setNotice(`Wave ${w.wave} — ${item.name} equipped.`); setRunId(v=>v+1)
+  const start = (selectedWeapon=weapon) => {
+    const item=weapons.find(x=>x.name===selectedWeapon&&owned.includes(x.code))||weapons[0]
+    worldRef.current = {player:{x:420,y:240,r:13,hp:100},enemies:[],bullets:[],keys:{},mouse:{x:620,y:240,down:false},wave:1,score:0,kills:0,spawned:0,need:6,spawnClock:0,lastShot:0,lastHud:0,status:'playing',weapon:item.name,damage:item.damage,rate:item.rate}
+    setWeapon(item.name);setHud({wave:1,score:0,hp:100,kills:0,status:'playing',weapon:item.name});setNotice('Wave 1 — clear all monsters!');setRunId(v=>v+1)
+  }
+  function continueWave(selectedWeapon=weapon){
+    const w=worldRef.current,item=weapons.find(x=>x.name===selectedWeapon&&owned.includes(x.code))||weapons[0]
+    if(!w)return
+    w.weapon=item.name;w.damage=item.damage;w.rate=item.rate;w.wave+=1;w.need=6+(w.wave-1)*3;w.spawned=0;w.spawnClock=0;w.status='playing'
+    setWeapon(item.name);setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name}));setNotice(`Wave ${w.wave} — ${item.name} equipped.`);setRunId(v=>v+1)
   }
   React.useEffect(()=>{
     const canvas=canvasRef.current, ctx=canvas?.getContext('2d'), w=worldRef.current
@@ -122,55 +149,87 @@ function ArenaShooter({ onFinish }) {
     const keyDown=e=>{if(['w','a','s','d',' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();w.keys[e.key.toLowerCase()]=true}}
     const keyUp=e=>{w.keys[e.key.toLowerCase()]=false}
     const pointer=e=>{const r=canvas.getBoundingClientRect();w.mouse.x=(e.clientX-r.left)*canvas.width/r.width;w.mouse.y=(e.clientY-r.top)*canvas.height/r.height}
-    const down=e=>{pointer(e);w.mouse.down=true;canvas.focus()}; const up=()=>{w.mouse.down=false}
+    const down=e=>{pointer(e);w.mouse.down=true;canvas.focus()},up=()=>{w.mouse.down=false}
     window.addEventListener('keydown',keyDown);window.addEventListener('keyup',keyUp);canvas.addEventListener('pointermove',pointer);canvas.addEventListener('pointerdown',down);window.addEventListener('pointerup',up)
-    let frame=0, last=performance.now()
+    let frame=0,last=performance.now()
     const loop=now=>{
-      const dt=Math.min(0.035,(now-last)/1000);last=now
+      const dt=Math.min(.035,(now-last)/1000);last=now
       if(w.status!=='playing'){cancelAnimationFrame(frame);return}
-      const p=w.player, keys=w.keys
-      let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0),len=Math.hypot(dx,dy)||1
+      const p=w.player,k=w.keys
+      let dx=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0),dy=(k.s||k.arrowdown?1:0)-(k.w||k.arrowup?1:0),len=Math.hypot(dx,dy)||1
       p.x=Math.max(18,Math.min(822,p.x+dx/len*220*dt));p.y=Math.max(18,Math.min(462,p.y+dy/len*220*dt))
       w.spawnClock+=dt
-      if(w.spawned<w.need&&w.spawnClock>Math.max(.35,1.25-w.wave*.055)){w.spawnClock=0;const edge=Math.floor(Math.random()*4);const x=edge===0?12:edge===1?828:Math.random()*840;const y=edge===2?12:edge===3?468:Math.random()*480;w.enemies.push({x,y,r:10+Math.min(8,w.wave),hp:1+Math.floor(w.wave/4),speed:35+w.wave*4}) ;w.spawned++}
-      if((w.mouse.down||keys[' '])&&now-w.lastShot>w.rate){const a=Math.atan2(w.mouse.y-p.y,w.mouse.x-p.x);w.bullets.push({x:p.x,y:p.y,vx:Math.cos(a)*520,vy:Math.sin(a)*520,life:1.2,damage:w.damage});w.lastShot=now}
+      if(w.spawned<w.need&&w.spawnClock>Math.max(.35,1.25-w.wave*.055)){w.spawnClock=0;const edge=Math.floor(Math.random()*4),x=edge===0?12:edge===1?828:Math.random()*840,y=edge===2?12:edge===3?468:Math.random()*480;w.enemies.push({x,y,r:10+Math.min(8,w.wave),hp:1+Math.floor(w.wave/4),speed:35+w.wave*4});w.spawned++}
+      if((w.mouse.down||k[' '])&&now-w.lastShot>w.rate){const a=Math.atan2(w.mouse.y-p.y,w.mouse.x-p.x);w.bullets.push({x:p.x,y:p.y,vx:Math.cos(a)*520,vy:Math.sin(a)*520,life:1.2,damage:w.damage});w.lastShot=now}
       for(const b of w.bullets){b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt}
-      for(const e of w.enemies){const a=Math.atan2(p.y-e.y,p.x-e.x);e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;if(Math.hypot(p.x-e.x,p.y-e.y)<p.r+e.r){p.hp-=16*dt}}
-      for(const b of w.bullets){for(const e of w.enemies){if(!e.dead&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage;b.life=0;if(e.hp<=0){e.dead=true;w.kills++;w.score+=10;w.coins+=5}}}}
+      for(const e of w.enemies){const a=Math.atan2(p.y-e.y,p.x-e.x);e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;if(Math.hypot(p.x-e.x,p.y-e.y)<p.r+e.r)p.hp-=16*dt}
+      for(const b of w.bullets)for(const e of w.enemies)if(!e.dead&&b.life>0&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage;b.life=0;if(e.hp<=0){e.dead=true;w.kills++;w.score+=10}}
       w.enemies=w.enemies.filter(e=>!e.dead);w.bullets=w.bullets.filter(b=>b.life>0&&b.x>-5&&b.x<845&&b.y>-5&&b.y<485)
-      if(p.hp<=0){p.hp=0;w.status='over';setHud({wave:w.wave,score:w.score,hp:0,coins:w.coins,kills:w.kills,status:'over',weapon:w.weapon});setCredits(w.coins);setNotice('Run over — your score and earned arcade credits are shown below.');onFinish?.('arena',w.score)}
-      else if(w.spawned===w.need&&w.enemies.length===0){w.status='shop';setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),coins:w.coins,kills:w.kills,status:'shop',weapon:w.weapon});setCredits(w.coins);setNotice(`Wave ${w.wave} cleared! Spend your run credits on a weapon before continuing.`)}
-      if(now-w.lastHud>120){w.lastHud=now;setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),coins:w.coins,kills:w.kills,status:w.status,weapon:w.weapon})}
+      if(p.hp<=0){p.hp=0;w.status='over';setHud({wave:w.wave,score:w.score,hp:0,kills:w.kills,status:'over',weapon:w.weapon});setNotice('Run over — your score and kills are shown below.');onFinish?.('arena',w.score)}
+      else if(w.spawned===w.need&&w.enemies.length===0){w.status='shop';setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:'shop',weapon:w.weapon});setNotice(`Wave ${w.wave} cleared! Choose an owned weapon or buy a new one below.`)}
+      if(now-w.lastHud>120){w.lastHud=now;setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:w.status,weapon:w.weapon})}
       ctx.fillStyle='#0c101a';ctx.fillRect(0,0,840,480);ctx.strokeStyle='#1e293b';ctx.lineWidth=1;for(let x=0;x<840;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,480);ctx.stroke()}for(let y=0;y<480;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(840,y);ctx.stroke()}
       ctx.fillStyle='#60a5fa';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#dbeafe';ctx.lineWidth=3;ctx.stroke()
       ctx.fillStyle='#fbbf24';for(const b of w.bullets){ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill()}
       for(const e of w.enemies){ctx.fillStyle='#a855f7';ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f5d0fe';ctx.fillRect(e.x-e.r,e.y-e.r-7,e.r*2*(e.hp/(1+Math.floor(w.wave/4))),3)}
-      ctx.fillStyle='#e2e8f0';ctx.font='13px system-ui';ctx.fillText(`WAVE ${w.wave}  ·  MONSTERS ${w.enemies.length+(w.need-w.spawned)}  ·  ${w.weapon}`,14,22)
+      ctx.fillStyle='#e2e8f0';ctx.font='13px system-ui';ctx.fillText(`WAVE ${w.wave} · MONSTERS ${w.enemies.length+(w.need-w.spawned)} · ${w.weapon}`,14,22)
       frame=requestAnimationFrame(loop)
     }
     frame=requestAnimationFrame(loop)
-    return ()=>{cancelAnimationFrame(frame);window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);canvas.removeEventListener('pointermove',pointer);canvas.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up)}
+    return()=>{cancelAnimationFrame(frame);window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);canvas.removeEventListener('pointermove',pointer);canvas.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up)}
   },[runId,onFinish])
-  const w=worldRef.current
-  return <div className="panel arena-panel"><div className="lobby-row"><div><h3>👾 Arena survival</h3><p className="muted">Move around the arena, aim with your mouse and survive increasingly difficult monster waves.</p></div><div className="arena-hud"><strong>Wave {hud.wave}</strong><strong>Score {hud.score}</strong><strong>HP {hud.hp}</strong><strong>Credits {hud.coins}</strong></div></div>
+  const coins=Number(playerStats?.coins||0)
+  return <div className="panel arena-panel"><div className="lobby-row"><div><h3>👾 Arena survival</h3><p className="muted">Move, aim and survive monster waves. Your account coins buy permanent weapons.</p></div><div className="arena-hud"><strong>Wave {hud.wave}</strong><strong>Score {hud.score}</strong><strong>HP {hud.hp}</strong><strong>🪙 {coins}</strong></div></div>
     <canvas ref={canvasRef} width="840" height="480" className="arena-canvas" tabIndex="0" aria-label="Arena shooter game area" />
     <p className="muted">{notice}</p>
-    {hud.status==='ready'&&<button className="primary" onClick={start}>Start survival</button>}
-    {hud.status==='over'&&<div className="arena-shop"><h3>Run complete</h3><p>Score: {hud.score} · Monsters defeated: {hud.kills} · Run credits: {credits}</p><button className="primary" onClick={start}>Play again</button></div>}
-    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — weapon shop</h3><p className="muted">Credits are earned in this run and are not deducted from your account balance.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.name}><strong>{item.name}</strong><span>{item.damage} damage · {Math.round(1000/item.rate)} shots/sec</span><span>{item.cost===0?'Free':`${item.cost} credits`}</span><button className="primary" disabled={credits<item.cost} onClick={()=>buy(item)}>{item.cost===0?'Continue':`Buy · ${item.cost}`}</button></div>)}</div><button className="secondary" onClick={()=>{const x=worldRef.current;if(x){x.wave++;x.need=6+(x.wave-1)*3;x.spawned=0;x.status='playing';setHud(h=>({...h,wave:x.wave,status:'playing'}));setNotice(`Wave ${x.wave} — keep moving!`);setRunId(v=>v+1)}}}>Continue with current weapon</button></div>}
+    {hud.status==='ready'&&<button className="primary" onClick={()=>start()}>Start survival</button>}
+    {hud.status==='over'&&<div className="arena-shop"><h3>Run complete</h3><p>Score: {hud.score} · Monsters defeated: {hud.kills}</p><button className="primary" onClick={()=>start()}>Play again</button></div>}
+    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — choose your weapon</h3><div className="weapon-grid">{weapons.filter(x=>owned.includes(x.code)).map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.damage} damage · {Math.round(1000/item.rate)} shots/sec</span><button className="primary" onClick={()=>continueWave(item.name)}>Equip & continue</button></div>)}</div></div>}
+    <div className="arena-shop"><h3>🛒 Permanent weapon shop</h3><p className="muted">Purchases use your real RLM account coins and stay unlocked for future runs.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.cost===0?'Free':`${item.cost} account coins`}</span>{owned.includes(item.code)?<span className="muted">✓ Owned</span>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyWeapon(item)}>{coins<item.cost?'Not enough coins':`Buy · ${item.cost}`}</button>}</div>)}</div>{shopMessage&&<p className="status">{shopMessage}</p>}</div>
   </div>
 }
 
 function AIRacer({ onFinish }) {
-  const [running,setRunning]=React.useState(false),[progress,setProgress]=React.useState(0),[bots,setBots]=React.useState([0,0,0]),[lane,setLane]=React.useState(1),[message,setMessage]=React.useState('Press start, then hold W or ↑ to accelerate. Use A/D or ←/→ to change lanes.')
-  const keys=React.useRef({})
-  const finished=React.useRef(false)
-  React.useEffect(()=>{const down=e=>{if(['w','a','d','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();keys.current[e.key.toLowerCase()]=true}},up=e=>{keys.current[e.key.toLowerCase()]=false};window.addEventListener('keydown',down);window.addEventListener('keyup',up);return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up)}},[])
-  React.useEffect(()=>{if(!running)return;const id=setInterval(()=>{const k=keys.current;setProgress(v=>{const n=Math.min(100,v+(k.w||k.arrowup?1.5:0.35));if(n>=100&&!finished.current){finished.current=true;setRunning(false);setMessage('🏁 You crossed the finish line!');onFinish?.('racer',100)}return n});setBots(v=>v.map((x,i)=>Math.min(100,x+[.65,.8,.72][i]+Math.random()*.25)));if(k.a||k.arrowleft)setLane(v=>Math.max(0,v-1));else if(k.d||k.arrowright)setLane(v=>Math.min(2,v+1))},180);return()=>clearInterval(id)},[running,onFinish])
-  function start(){finished.current=false;setProgress(0);setBots([0,0,0]);setLane(1);setMessage('Race started — accelerate and steer!');setRunning(true);keys.current={}}
-  const cars=[{name:'You',value:progress,lane},{name:'Nova',value:bots[0],lane:0},{name:'Pixel',value:bots[1],lane:2},{name:'Turbo',value:bots[2],lane:1}]
-  return <div className="panel racer-panel"><h3>🏎 RLM Grand Prix — AI race</h3><p className="muted">Race three computer drivers on a three-lane road. Hold W / ↑ to accelerate; A/D / ←/→ to steer.</p><div className="race-game-layout"><div className="road-view"><div className="road-lines"/><div className="finish-line" style={{top:`${Math.max(2,92-progress*.88)}%`}}/> {cars.map((car,i)=><div key={car.name} className={`road-car ${i===0?'player-car':'bot-car'}`} style={{left:`${18+car.lane*32}%`,top:`${Math.max(4,88-car.value*.78)}%`}}><span>{i===0?'🏎️':'🚙'}</span><small>{car.name}</small></div>)}</div><div className="race-side"><div className="race-big-stat"><strong>{Math.round(progress)}%</strong><span>Distance</span></div><p>{message}</p><button className="primary" disabled={running} onClick={start}>{running?'Race in progress':'Start race'}</button>{cars.slice(1).map(car=><div className="race-opponent" key={car.name}><span>{car.name}</span><strong>{Math.round(car.value)}%</strong><div className="race-track"><div className="race-car" style={{width:`${car.value}%`}}/></div></div>)}</div></div></div>
+  const canvasRef=React.useRef(null),worldRef=React.useRef(null),keys=React.useRef({}),finished=React.useRef(false)
+  const [running,setRunning]=React.useState(false),[message,setMessage]=React.useState('Start the race. Hold W / ↑ to accelerate, S / ↓ to brake, and steer with A/D or ←/→.'),[lap,setLap]=React.useState(0),[speed,setSpeed]=React.useState(0),[place,setPlace]=React.useState(1)
+  const start=()=>{worldRef.current={x:430,y:402,angle:Math.PI,speed:0,lap:0,lastAngle:Math.PI/2,progress:0,bots:[{phase:0,speed:.66},{phase:1.8,speed:.70},{phase:3.4,speed:.63}],lastHud:0};finished.current=false;keys.current={};setLap(0);setSpeed(0);setPlace(1);setMessage('Lights out! Go go go!');setRunning(true)}
+  React.useEffect(()=>{const down=e=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)){e.preventDefault();keys.current[k]=true}},up=e=>{keys.current[e.key.toLowerCase()]=false};window.addEventListener('keydown',down);window.addEventListener('keyup',up);return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up)}},[])
+  React.useEffect(()=>{
+    if(!running)return
+    const canvas=canvasRef.current,ctx=canvas?.getContext('2d'),w=worldRef.current;if(!ctx||!w)return
+    let frame=0,last=performance.now()
+    const track={cx:430,cy:265,rx:300,ry:185,innerX:205,innerY:90}
+    const drawCar=(x,y,a,color,label)=>{ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.fillStyle=color;ctx.fillRect(-18,-9,36,18);ctx.fillStyle='#111827';ctx.fillRect(-10,-12,16,24);ctx.fillStyle='#e5e7eb';ctx.fillRect(9,-7,7,14);ctx.fillStyle='#0b1020';ctx.fillRect(-13,-13,8,5);ctx.fillRect(7,-13,8,5);ctx.fillRect(-13,8,8,5);ctx.fillRect(7,8,8,5);ctx.restore();if(label){ctx.fillStyle='#f8fafc';ctx.font='11px system-ui';ctx.fillText(label,x-12,y-17)}}
+    const loop=now=>{const dt=Math.min(.04,(now-last)/1000);last=now;const k=keys.current
+      const throttle=k.w||k.arrowup,brake=k.s||k.arrowdown,left=k.a||k.arrowleft,right=k.d||k.arrowright
+      w.speed=Math.max(0,Math.min(250,w.speed+((throttle?105:0)-(brake?180:22))*dt))
+      const steer=(right?1:0)-(left?1:0);w.angle+=steer*(.8+w.speed/150)*dt*(w.speed>0?1:0)
+      w.x+=Math.cos(w.angle)*w.speed*dt;w.y+=Math.sin(w.angle)*w.speed*dt
+      const outer=((w.x-track.cx)/track.rx)**2+((w.y-track.cy)/track.ry)**2,inner=((w.x-track.cx)/track.innerX)**2+((w.y-track.cy)/track.innerY)**2
+      if(outer>1.08||inner<.86)w.speed*=.91
+      const angle=Math.atan2((w.y-track.cy)/track.ry,(w.x-track.cx)/track.rx);let delta=angle-w.lastAngle;while(delta>Math.PI)delta-=Math.PI*2;while(delta<-Math.PI)delta+=Math.PI*2
+      if(delta>0.015&&w.lastAngle>2.2&&angle<-2.2)w.lap++
+      w.lastAngle=angle
+      for(const b of w.bots)b.phase+=b.speed*dt
+      const playerPhase=(Math.atan2((w.y-track.cy)/track.ry,(w.x-track.cx)/track.rx)+Math.PI*2)%(Math.PI*2),ahead=w.bots.filter(b=>((b.phase%(Math.PI*2))>playerPhase)).length+1
+      if(now-w.lastHud>100){w.lastHud=now;setLap(w.lap);setSpeed(Math.round(w.speed));setPlace(ahead)}
+      ctx.fillStyle='#12351f';ctx.fillRect(0,0,860,530)
+      ctx.fillStyle='#252a32';ctx.beginPath();ctx.ellipse(track.cx,track.cy,track.rx,track.ry,0,0,Math.PI*2);ctx.fill()
+      ctx.fillStyle='#12351f';ctx.beginPath();ctx.ellipse(track.cx,track.cy,track.innerX,track.innerY,0,0,Math.PI*2);ctx.fill()
+      ctx.strokeStyle='#f8fafc';ctx.lineWidth=3;ctx.setLineDash([18,14]);ctx.beginPath();ctx.ellipse(track.cx,track.cy,(track.rx+track.innerX)/2,(track.ry+track.innerY)/2,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([])
+      ctx.fillStyle='#64748b';ctx.fillRect(track.cx+track.rx-3,track.cy-18,6,36);ctx.fillStyle='#f8fafc';for(let i=0;i<6;i++)ctx.fillRect(track.cx+track.rx-3,track.cy-18+i*6,6,3)
+      ctx.fillStyle='#d1d5db';ctx.font='bold 16px system-ui';ctx.fillText('RLM GRAND PRIX',26,32)
+      for(let i=0;i<w.bots.length;i++){const b=w.bots[i],a=b.phase%(Math.PI*2),x=track.cx+Math.cos(a)*252,y=track.cy+Math.sin(a)*145;drawCar(x,y,a+Math.PI/2,['#ef4444','#facc15','#a78bfa'][i],`AI ${i+1}`)}
+      drawCar(w.x,w.y,w.angle,'#38bdf8','YOU')
+      ctx.fillStyle='#f8fafc';ctx.font='13px system-ui';ctx.fillText(`LAP ${Math.min(w.lap+1,3)} / 3   SPEED ${Math.round(w.speed)} km/h`,26,505)
+      if(w.lap>=3&&!finished.current){finished.current=true;setRunning(false);setMessage('🏁 Chequered flag! Race complete.');onFinish?.('racer',100);return}
+      frame=requestAnimationFrame(loop)
+    }
+    frame=requestAnimationFrame(loop);return()=>cancelAnimationFrame(frame)
+  },[running,onFinish])
+  return <div className="panel racer-panel"><h3>🏎 RLM Formula Racing</h3><p className="muted">Top-down circuit racing against three AI drivers. Stay on the tarmac, brake for corners and steer smoothly.</p><div className="f1-hud"><strong>Lap {Math.min(lap+1,3)} / 3</strong><strong>{speed} km/h</strong><strong>P{place}</strong></div><canvas ref={canvasRef} width="860" height="530" className="f1-canvas" aria-label="Formula racing circuit"/><p className="muted">{message}</p><button className="primary" disabled={running} onClick={start}>{running?'Race in progress':'Start race'}</button></div>
 }
+
 
 
 export default function ExtendedGames({ supabase, session, members = [], staffRole = 'member', onProgress }) {
@@ -285,11 +344,23 @@ export default function ExtendedGames({ supabase, session, members = [], staffRo
       submitState({ fen: game.fen(), pgn: game.pgn() }, game.isGameOver() ? (game.isDraw() ? 'draw' : session.user.id) : null)
     } catch { setSelected(square) }
   }
+  const refreshPlayerStats = React.useCallback(async () => {
+    if (!supabase || !session) return
+    const { data, error } = await supabase.from('player_stats').select('xp,level,coins').eq('user_id', session.user.id).maybeSingle()
+    if (!error && data) setPlayerStats(data)
+  }, [supabase, session])
   const finishLocalGame = React.useCallback(async (key, score) => {
-    const { error } = await supabase.rpc('rlm_award_minigame_xp', { p_game_key: key, p_score: score })
-    if (error) setNote(`Game finished, but XP was not saved: ${error.message}`)
-    else { setNote('XP awarded!'); onProgress?.() }
-  }, [supabase, onProgress])
+    if (!supabase) return
+    const { data, error } = await supabase.rpc('rlm_award_minigame_xp', { p_game_key: key, p_score: score })
+    if (error) setNote(`Game finished, but rewards were not saved: ${error.message}. Apply the RLM rewards migration.`)
+    else { await refreshPlayerStats(); setNote(`Game complete! +${data?.xp_awarded ?? 'XP'} XP${data?.coins_awarded ? ` and +${data.coins_awarded} coins` : ''}.`); onProgress?.() }
+  }, [supabase, refreshPlayerStats, onProgress])
+  const rewardedMatchRef = React.useRef('')
+  React.useEffect(() => {
+    if (!active?.id || active.status !== 'finished' || rewardedMatchRef.current === active.id) return
+    rewardedMatchRef.current = active.id
+    finishLocalGame(active.game_type, 100)
+  }, [active?.id, active?.status, active?.game_type, finishLocalGame])
 
 
   if (!session) return <div className="panel"><h3>Sign in to play RLM games</h3></div>
@@ -318,7 +389,7 @@ export default function ExtendedGames({ supabase, session, members = [], staffRo
     {tab === 'chess' && <div className="mode-switch"><button className={chessMode==='bot'?'primary':'secondary'} onClick={()=>setChessMode('bot')}>🤖 Play vs bot</button><button className={chessMode==='online'?'primary':'secondary'} onClick={()=>setChessMode('online')}>🌐 Multiplayer</button></div>}
     {tab === 'racer' && <div className="mode-switch"><button className={racerMode==='ai'?'primary':'secondary'} onClick={()=>setRacerMode('ai')}>🤖 AI race</button><button className={racerMode==='online'?'primary':'secondary'} onClick={()=>setRacerMode('online')}>🌐 Online race</button></div>}
     {tab === 'chess' && chessMode === 'bot' && <SoloChess onFinish={finishLocalGame} />}
-    {tab === 'arena' && <ArenaShooter onFinish={finishLocalGame} />}
+    {tab === 'arena' && <ArenaShooter onFinish={finishLocalGame} supabase={supabase} playerStats={playerStats} onStatsRefresh={refreshPlayerStats} />}
     {tab === 'racer' && racerMode === 'ai' && <AIRacer onFinish={finishLocalGame} />}
     {((tab === 'chess' && chessMode === 'online') || tab === 'ttt' || (tab === 'racer' && racerMode === 'online')) && <div className="panel">
       <h3>{tab === 'chess' ? '♟ Live multiplayer chess' : tab === 'ttt' ? '⭕ Multiplayer tic-tac-toe' : '🏎 Clan race lobby'}</h3>
