@@ -280,3 +280,37 @@ img {
   color: #29213a;
   border-color: #d6c5e9;
 }
+/* RLM expanded arcade games */
+.mode-switch{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 13px}
+.solo-chess-panel .lobby-row{align-items:flex-start}
+.solo-chess-layout{display:grid;grid-template-columns:minmax(260px,420px) minmax(180px,1fr);gap:18px;align-items:start;margin-top:12px}
+.solo-chess-board{width:100%;max-width:420px;aspect-ratio:1;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:0;border:3px solid #473653;border-radius:8px;overflow:hidden}
+.solo-chess-board .chess-square{min-width:0;aspect-ratio:1;font-size:clamp(19px,4vw,39px);padding:0}
+.solo-chess-info{display:grid;gap:12px;align-content:start;color:#eee5f7;font-size:13px}
+.solo-chess-info .muted{line-height:1.6}
+.arena-panel{overflow:hidden}
+.arena-hud{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.arena-hud strong{background:#2a2137;border:1px solid #57416c;border-radius:8px;padding:7px 10px;font-size:12px;white-space:nowrap}
+.arena-canvas{display:block;width:100%;height:auto;aspect-ratio:840/480;background:#0c101a;border:1px solid #3a3150;border-radius:10px;cursor:crosshair;touch-action:none;outline:none}
+.arena-canvas:focus{border-color:#b58ae2;box-shadow:0 0 0 2px #7545a555}
+.arena-shop{margin-top:14px;padding:14px;border:1px solid #59416e;border-radius:10px;background:#171321}
+.weapon-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.weapon-card{display:grid;gap:8px;align-content:start;padding:12px;background:#211a2d;border:1px solid #4b3a5c;border-radius:9px;font-size:12px}
+.weapon-card span{color:#b8a9c8}
+.race-game-layout{display:grid;grid-template-columns:minmax(220px,1fr) minmax(190px,260px);gap:14px;align-items:stretch}
+.road-view{height:510px;max-height:65vh;min-height:390px;position:relative;overflow:hidden;border:8px solid #33283f;border-radius:12px;background:linear-gradient(90deg,#34343b 0 7%,#55545b 7% 93%,#34343b 93%);}
+.road-lines{position:absolute;inset:0;background:repeating-linear-gradient(180deg,transparent 0 38px,#eee8 38px 68px,transparent 68px 110px);background-size:100% 110px;animation:road-scroll .45s linear infinite;opacity:.75}
+@keyframes road-scroll{to{background-position:0 110px}}
+.finish-line{position:absolute;left:8%;right:8%;height:12px;background:repeating-conic-gradient(#fff 0 25%,#171717 0 50%) 0/18px 18px;z-index:1}
+.road-car{position:absolute;z-index:2;transform:translateX(-50%);display:grid;justify-items:center;gap:1px;transition:top .18s linear,left .15s ease}
+.road-car span{font-size:32px;filter:drop-shadow(0 3px 2px #0009)}
+.road-car small{font-size:9px;background:#17121e;color:white;border-radius:5px;padding:2px 5px}
+.player-car span{font-size:38px}
+.player-car small{background:#7545a5}
+.race-side{display:flex;flex-direction:column;gap:11px;min-width:0}
+.race-big-stat{display:grid;padding:14px;border-radius:10px;background:#251b32;border:1px solid #58416c}
+.race-big-stat strong{font-size:30px;color:#d8b7ff}
+.race-big-stat span,.race-side p{font-size:12px;color:#b8a9c8}
+.race-opponent{display:grid;grid-template-columns:1fr auto;gap:6px;font-size:12px;align-items:center}
+.race-opponent .race-track{grid-column:1/-1}
+@media(max-width:720px){.solo-chess-layout,.race-game-layout{grid-template-columns:1fr}.solo-chess-board{max-width:100%}.solo-chess-info{grid-template-columns:1fr}.weapon-grid{grid-template-columns:1fr}.arena-hud{justify-content:flex-start}.road-view{height:440px;min-height:360px}}
