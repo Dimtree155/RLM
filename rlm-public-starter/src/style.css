@@ -315,91 +315,16 @@ img {
 .race-opponent .race-track{grid-column:1/-1}
 @media(max-width:720px){.solo-chess-layout,.race-game-layout{grid-template-columns:1fr}.solo-chess-board{max-width:100%}.solo-chess-info{grid-template-columns:1fr}.weapon-grid{grid-template-columns:1fr}.arena-hud{justify-content:flex-start}.road-view{height:440px;min-height:360px}}
 
-/* RLM Formula Racing */
-.f1-canvas {
-  display: block;
-  width: 100%;
-  max-width: 860px;
-  height: auto;
-  margin: 14px auto;
-  border: 1px solid rgba(148,163,184,.28);
-  border-radius: 14px;
-  background: #12351f;
-  touch-action: none;
-}
-.f1-hud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin: 12px 0;
-}
-.f1-hud strong {
-  padding: 8px 12px;
-  border: 1px solid rgba(148,163,184,.25);
-  border-radius: 9px;
-  background: rgba(15,23,42,.55);
-}
-
-
-/* Fixed 8x8 multiplayer chessboard layout */
-.active-match .multiplayer-chess-board {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  grid-template-rows: repeat(8, minmax(0, 1fr));
-  gap: 0;
-  width: min(100%, 560px);
-  aspect-ratio: 1 / 1;
-  margin: 14px auto;
-  padding: 0;
-  border: 3px solid #473653;
-  border-radius: 8px;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-.active-match .multiplayer-chess-board .chess-square {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  aspect-ratio: 1 / 1;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  box-sizing: border-box;
-  font-family: "Segoe UI Symbol", "DejaVu Sans", sans-serif;
-  font-size: clamp(20px, 5.5vw, 46px);
-  line-height: 1;
-  cursor: pointer;
-}
-.active-match .multiplayer-chess-board .chess-square.light { background: #f0d9b5; color: #171717; }
-.active-match .multiplayer-chess-board .chess-square.dark { background: #b58863; color: #171717; }
-.active-match .multiplayer-chess-board .chess-square.chosen {
-  outline: 4px solid #facc15;
-  outline-offset: -4px;
-  background-image: linear-gradient(#facc1555, #facc1555);
-}
-
-
-/* Multiplayer chess: rotate the board for the player using Black. */
-.active-match .multiplayer-chess-board.black-perspective {
-  transform: rotate(180deg);
-}
-.active-match .multiplayer-chess-board.black-perspective .chess-square {
-  transform: rotate(180deg);
-}
-
-/* Arena HUD: strong contrast against the dark game panel. */
-.arena-panel .arena-hud strong {
-  color: #ffffff !important;
-  background: #493365;
-  border: 1px solid #b99be0;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .85);
-  font-weight: 800;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
-}
-.level-xp-track{height:10px;background:rgba(100,116,139,.25);border-radius:99px;overflow:hidden;margin:10px 0 4px}.level-xp-track span{display:block;height:100%;background:linear-gradient(90deg,#7c3aed,#38bdf8);border-radius:99px;transition:width .25s ease}
+/* RLM Abyssal Arena visual upgrade */
+.arena-abyss{background:radial-gradient(ellipse at 50% 0%,#252047 0%,#171525 54%,#11101a 100%);border-color:#59417c;box-shadow:0 18px 55px #0007,inset 0 1px #ffffff12}
+.arena-kicker{display:inline-block;color:#c6a4ff;font-size:10px;font-weight:900;letter-spacing:2px;margin-bottom:5px}
+.arena-abyss h3{color:#f4eaff;text-shadow:0 0 18px #a855f755}
+.arena-hud strong{background:linear-gradient(145deg,#30234a,#191727);border-color:#7654a0;color:#e9d9ff;box-shadow:inset 0 1px #ffffff12,0 5px 14px #0004}
+.arena-canvas-premium{background:#080b16;border:1px solid #8b6bb2;box-shadow:0 0 0 1px #ffffff0a,0 12px 34px #0008,0 0 28px #7448a533;aspect-ratio:840/480}
+.arena-level-strip{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;align-items:center;margin:13px 0;padding:11px 13px;background:#110f1d;border:1px solid #49365e;border-radius:10px;color:#e8dafa;font-size:12px}
+.arena-level-strip span{text-align:right;color:#bba9d0}.arena-level-strip>div{grid-column:1/-1;height:8px;background:#30243f;border-radius:99px;overflow:hidden}.arena-level-strip i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#42d8ff);box-shadow:0 0 14px #8b5cf6;transition:width .3s}
+.arena-shop{background:linear-gradient(145deg,#1b1728,#13111d);border-color:#4a385e;box-shadow:inset 0 1px #ffffff08}
+.weapon-card{background:linear-gradient(145deg,#2b203c,#191624);border-color:#5a426f;transition:transform .18s,border-color .18s,box-shadow .18s}.weapon-card:hover{transform:translateY(-2px);border-color:#b18be0;box-shadow:0 8px 22px #0005}.weapon-card strong{color:#f1e5ff}.weapon-card span{line-height:1.45}.arena-owned{color:#8ff0bd!important;font-weight:900;letter-spacing:1px}
+.dungeon-quest{border-color:#82613d;background:linear-gradient(145deg,#292035,#191522)}.quest-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.quest-grid>div{display:grid;gap:7px;padding:12px;background:#171321;border:1px solid #574466;border-radius:9px}.quest-grid strong{color:#f4dfb5}.quest-grid span{font-size:11px;color:#b9a9c9}.quest-grid i{height:7px;border-radius:20px;background:linear-gradient(90deg,#d69a4b,#ffe0a1);box-shadow:0 0 12px #d69a4b55}
+.xp-leaderboard-panel{border-color:#6a4c89;background:linear-gradient(145deg,#211a30,#171421)}.xp-leaderboard-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.xp-leaderboard-heading h3{margin:3px 0}.xp-cap{font-size:10px;font-weight:900;letter-spacing:1px;color:#d7bdff;border:1px solid #76579a;border-radius:20px;padding:7px 10px}.xp-leaderboard-list{display:grid;gap:7px;margin-top:14px}.xp-leaderboard-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid #3f334f;border-radius:10px;background:#171421}.xp-leaderboard-row.is-you{border-color:#a77be8;background:linear-gradient(90deg,#3b2856,#20182e);box-shadow:0 0 0 1px #a77be833}.xp-rank{width:34px;color:#d4b6ff;font-size:15px}.xp-avatar{width:38px;height:38px;flex:0 0 38px;border-radius:50%;object-fit:cover;border:1px solid #8866aa}.xp-avatar-fallback{display:grid;place-items:center;background:#4a3265;color:white;font-weight:900}.xp-member{display:grid;gap:3px;min-width:0;flex:1}.xp-member strong{color:#f2eaff;font-size:13px}.xp-member small{color:#a99ab8;font-size:11px}.xp-member-score{display:grid;gap:3px;text-align:right}.xp-member-score strong{color:#e2c8ff;font-size:12px}.xp-member-score small{color:#a99ab8;font-size:11px}.you-tag{font-size:9px;color:#171020;background:#c69aff;padding:3px 6px;border-radius:5px;margin-left:5px;vertical-align:middle}
+@media(max-width:680px){.quest-grid{grid-template-columns:1fr}.xp-leaderboard-row{gap:8px;padding:9px}.xp-rank{width:27px}.xp-member-score strong{font-size:10px}}
