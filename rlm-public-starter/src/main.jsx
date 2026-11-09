@@ -231,6 +231,8 @@ function App() {
   const [progressData, setProgressData] = React.useState(null)
   const [progressLoading, setProgressLoading] = React.useState(false)
   const [progressBusy, setProgressBusy] = React.useState(false)
+  const [xpLeaderboard, setXpLeaderboard] = React.useState([])
+  const [xpLeaderboardLoading, setXpLeaderboardLoading] = React.useState(false)
   const [ownerRoleTarget, setOwnerRoleTarget] = React.useState('')
   const [ownerRoleChoice, setOwnerRoleChoice] = React.useState('moderator')
   const [titleTarget, setTitleTarget] = React.useState('')
@@ -402,6 +404,25 @@ function App() {
     loadCosmetics()
     return () => { cancelled = true }
   }, [session])
+
+  React.useEffect(() => {
+    if (!session || !supabase || section !== 'Leaderboard') return
+    let cancelled = false
+    async function loadXpLeaderboard() {
+      setXpLeaderboardLoading(true)
+      const { data, error } = await supabase.rpc('rlm_get_xp_leaderboard')
+      if (!cancelled) {
+        if (error) setStatus('Could not load XP leaderboard: ' + error.message)
+        else setXpLeaderboard(data || [])
+        setXpLeaderboardLoading(false)
+      }
+    }
+    loadXpLeaderboard()
+    const channel = supabase.channel('rlm-xp-leaderboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_stats' }, loadXpLeaderboard)
+      .subscribe()
+    return () => { cancelled = true; supabase.removeChannel(channel) }
+  }, [session, section])
 
   async function refreshProgress() {
     if (!session || !supabase) { setProgressData(null); return }
@@ -1823,6 +1844,20 @@ function App() {
           <p className="muted">
             Find clan members, send friend requests, and start private chats after a request is accepted.
           </p>
+
+          <div className="panel xp-leaderboard-panel">
+            <div className="xp-leaderboard-heading"><div><span className="arena-kicker">RLM GLOBAL RANKINGS</span><h3>🏆 XP Leaderboard</h3><p className="muted">Players are ranked by level first, then total XP.</p></div><span className="xp-cap">LEVEL CAP · 100</span></div>
+            {xpLeaderboardLoading ? <p className="muted">Loading rankings…</p> : xpLeaderboard.length === 0 ? <p className="muted">No rankings yet. Play a game to earn the first XP.</p> : <div className="xp-leaderboard-list">{xpLeaderboard.map(row => {
+              const isYou = row.user_id === session.user.id
+              return <div key={row.user_id} className={`xp-leaderboard-row ${isYou ? 'is-you' : ''}`}>
+                <strong className="xp-rank">#{row.rank}</strong>
+                {row.avatar_url ? <img className="xp-avatar" src={row.avatar_url} alt="" /> : <span className="xp-avatar xp-avatar-fallback">{(row.display_name || row.username || '?').slice(0,1).toUpperCase()}</span>}
+                <div className="xp-member"><strong>{row.display_name || row.username || 'RLM member'} {isYou && <span className="you-tag">YOU</span>}</strong><small>@{row.username || 'member'}</small></div>
+                <div className="xp-member-score"><strong>LEVEL {row.level}</strong><small>{Number(row.xp || 0).toLocaleString()} XP</small></div>
+              </div>
+            })}</div>}
+            {!xpLeaderboardLoading && !xpLeaderboard.some(row => row.user_id === session.user.id) && <p className="muted">Your ranking will appear here after your first XP reward.</p>}
+          </div>
 
           {incoming.length > 0 && (
             <div className="panel">
