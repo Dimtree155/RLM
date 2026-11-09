@@ -101,47 +101,58 @@ function SoloChess({ onFinish }) {
 function ArenaShooter({ onFinish, supabase, playerStats, onStatsRefresh }) {
   const canvasRef = React.useRef(null)
   const worldRef = React.useRef(null)
-  const [hud,setHud] = React.useState({wave:1,score:0,hp:100,kills:0,status:'ready',weapon:'Pistol'})
+  const [hud,setHud] = React.useState({wave:1,score:0,hp:100,kills:0,status:'ready',weapon:'Pistol',boss:false})
   const [owned,setOwned] = React.useState(['arena_pistol'])
+  const [ownedPets,setOwnedPets] = React.useState([])
+  const [activePet,setActivePet] = React.useState('')
   const [shopBusy,setShopBusy] = React.useState(false)
   const [shopMessage,setShopMessage] = React.useState('')
   const [weapon,setWeapon] = React.useState('Pistol')
   const [notice,setNotice] = React.useState('WASD to move · Mouse to aim and shoot · Space also fires')
   const [runId,setRunId] = React.useState(0)
   const weapons = [
-    {code:'arena_pistol',name:'Pistol',cost:0,damage:1,rate:260,desc:'Reliable starter sidearm'},
-    {code:'arena_burst_rifle',name:'Burst rifle',cost:150,damage:1,rate:125,desc:'Fast firing for close and mid range'},
-    {code:'arena_shotgun',name:'Scattergun',cost:220,damage:4,rate:620,desc:'Heavy close-range damage'},
-    {code:'arena_plasma_blaster',name:'Plasma blaster',cost:350,damage:3,rate:300,desc:'Powerful energy shots'}
+    {code:'arena_pistol',name:'Pistol',cost:0,damage:1,rate:260,desc:'Reliable starter sidearm',kind:'bullet'},
+    {code:'arena_burst_rifle',name:'Burst rifle',cost:150,damage:1,rate:125,desc:'Fast firing for close and mid range',kind:'bullet'},
+    {code:'arena_shotgun',name:'Scattergun',cost:220,damage:2,rate:620,desc:'Five-pellet close-range blast',kind:'shotgun'},
+    {code:'arena_plasma_blaster',name:'Plasma blaster',cost:350,damage:3,rate:300,desc:'Powerful energy shots',kind:'plasma'},
+    {code:'arena_laser_rifle',name:'Laser rifle',cost:480,damage:3,rate:180,desc:'Piercing beam that can hit a line of monsters',kind:'laser'},
+    {code:'arena_knife',name:'Arc knife',cost:280,damage:5,rate:420,desc:'Short-range energy swipe — get close to strike',kind:'melee'}
+  ]
+  const pets = [
+    {code:'arena_pet_drone',name:'Scout drone',cost:300,desc:'Fires a small support bolt at nearby monsters',damage:1,rate:1100},
+    {code:'arena_pet_slime',name:'Glow slime',cost:420,desc:'A friendly companion that helps weaken monsters',damage:2,rate:1500},
+    {code:'arena_pet_fox',name:'Ember fox',cost:600,desc:'A speedy companion with stronger support shots',damage:2,rate:900}
   ]
   React.useEffect(()=>{
     let alive=true
     async function loadOwned(){
       if(!supabase)return
       const {data,error}=await supabase.from('user_inventory').select('item_code').eq('user_id',(await supabase.auth.getUser()).data.user?.id)
-      if(alive&&!error)setOwned(['arena_pistol',...(data||[]).map(x=>x.item_code).filter(x=>weapons.some(w=>w.code===x))])
+      if(alive&&!error){const codes=(data||[]).map(x=>x.item_code);setOwned(['arena_pistol',...codes.filter(x=>weapons.some(w=>w.code===x))]);setOwnedPets(codes.filter(x=>pets.some(p=>p.code===x)))}
     }
     loadOwned()
     return()=>{alive=false}
   },[supabase])
-  async function buyWeapon(item){
-    if(item.code==='arena_pistol'||owned.includes(item.code)||shopBusy)return
+  async function buyItem(item){
+    if(owned.includes(item.code)||ownedPets.includes(item.code)||shopBusy)return
+    if(!supabase){setShopMessage('Sign in to buy permanent items.');return}
     setShopBusy(true);setShopMessage('')
     const {data,error}=await supabase.rpc('rlm_buy_arena_weapon',{p_item_code:item.code})
     setShopBusy(false)
     if(error){setShopMessage(`Purchase failed: ${error.message}`);return}
-    setOwned(v=>[...v,item.code]);setShopMessage(`${item.name} unlocked!`);onStatsRefresh?.()
+    if(weapons.some(w=>w.code===item.code))setOwned(v=>[...v,item.code]);else{setOwnedPets(v=>[...v,item.code]);setActivePet(item.code)}
+    setShopMessage(`${item.name} unlocked!`);onStatsRefresh?.()
   }
   const start = (selectedWeapon=weapon) => {
     const item=weapons.find(x=>x.name===selectedWeapon&&owned.includes(x.code))||weapons[0]
-    worldRef.current = {player:{x:420,y:240,r:13,hp:100},enemies:[],bullets:[],keys:{},mouse:{x:620,y:240,down:false},wave:1,score:0,kills:0,spawned:0,need:6,spawnClock:0,lastShot:0,lastHud:0,status:'playing',weapon:item.name,damage:item.damage,rate:item.rate}
-    setWeapon(item.name);setHud({wave:1,score:0,hp:100,kills:0,status:'playing',weapon:item.name});setNotice('Wave 1 — clear all monsters!');setRunId(v=>v+1)
+    worldRef.current = {player:{x:420,y:240,r:13,hp:100},enemies:[],bullets:[],keys:{},mouse:{x:620,y:240,down:false},wave:1,score:0,kills:0,spawned:0,need:6,spawnClock:0,lastShot:0,lastHud:0,lastPetShot:0,lastMelee:0,pet:activePet,status:'playing',weapon:item.name,weaponCode:item.code,damage:item.damage,rate:item.rate,kind:item.kind,bossWave:false}
+    setWeapon(item.name);setHud({wave:1,score:0,hp:100,kills:0,status:'playing',weapon:item.name,boss:false});setNotice('Wave 1 — clear all monsters!');setRunId(v=>v+1)
   }
   function continueWave(selectedWeapon=weapon){
     const w=worldRef.current,item=weapons.find(x=>x.name===selectedWeapon&&owned.includes(x.code))||weapons[0]
     if(!w)return
-    w.weapon=item.name;w.damage=item.damage;w.rate=item.rate;w.wave+=1;w.need=6+(w.wave-1)*3;w.spawned=0;w.spawnClock=0;w.status='playing'
-    setWeapon(item.name);setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name}));setNotice(`Wave ${w.wave} — ${item.name} equipped.`);setRunId(v=>v+1)
+    w.weapon=item.name;w.weaponCode=item.code;w.damage=item.damage;w.rate=item.rate;w.kind=item.kind;w.pet=activePet;w.wave+=1;w.need=6+(w.wave-1)*3;w.spawned=0;w.spawnClock=0;w.bossWave=w.wave%5===0;w.status='playing'
+    setWeapon(item.name);setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name,boss:w.bossWave}));setNotice(w.bossWave?`BOSS WAVE ${w.wave}! A giant monster is coming!`:`Wave ${w.wave} — ${item.name} equipped.`);setRunId(v=>v+1)
   }
   React.useEffect(()=>{
     const canvas=canvasRef.current, ctx=canvas?.getContext('2d'), w=worldRef.current
@@ -159,36 +170,56 @@ function ArenaShooter({ onFinish, supabase, playerStats, onStatsRefresh }) {
       let dx=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0),dy=(k.s||k.arrowdown?1:0)-(k.w||k.arrowup?1:0),len=Math.hypot(dx,dy)||1
       p.x=Math.max(18,Math.min(822,p.x+dx/len*220*dt));p.y=Math.max(18,Math.min(462,p.y+dy/len*220*dt))
       w.spawnClock+=dt
-      if(w.spawned<w.need&&w.spawnClock>Math.max(.35,1.25-w.wave*.055)){w.spawnClock=0;const edge=Math.floor(Math.random()*4),x=edge===0?12:edge===1?828:Math.random()*840,y=edge===2?12:edge===3?468:Math.random()*480;w.enemies.push({x,y,r:10+Math.min(8,w.wave),hp:1+Math.floor(w.wave/4),speed:35+w.wave*4});w.spawned++}
-      if((w.mouse.down||k[' '])&&now-w.lastShot>w.rate){const a=Math.atan2(w.mouse.y-p.y,w.mouse.x-p.x);w.bullets.push({x:p.x,y:p.y,vx:Math.cos(a)*520,vy:Math.sin(a)*520,life:1.2,damage:w.damage});w.lastShot=now}
+      if(w.spawned<w.need&&w.spawnClock>Math.max(.35,1.25-w.wave*.055)){
+        w.spawnClock=0
+        const isBoss=w.bossWave&&w.spawned===0
+        const edge=Math.floor(Math.random()*4),x=edge===0?12:edge===1?828:Math.random()*840,y=edge===2?12:edge===3?468:Math.random()*480
+        w.enemies.push({x,y,r:isBoss?31:10+Math.min(8,w.wave),hp:isBoss?42+w.wave*7:1+Math.floor(w.wave/4),maxHp:isBoss?42+w.wave*7:1+Math.floor(w.wave/4),speed:isBoss?25+w.wave*1.5:35+w.wave*4,boss:isBoss})
+        w.spawned++
+      }
+      const aim=Math.atan2(w.mouse.y-p.y,w.mouse.x-p.x)
+      if(w.kind==='melee'&&(w.mouse.down||k[' '])&&now-w.lastMelee>w.rate){
+        for(const e of w.enemies){const a=Math.atan2(e.y-p.y,e.x-p.x),d=Math.hypot(e.x-p.x,e.y-p.y);if(d<86&&Math.abs(Math.atan2(Math.sin(a-aim),Math.cos(a-aim)))<.9){e.hp-=w.damage*2;if(e.hp<=0&&!e.dead){e.dead=true;w.kills++;w.score+=e.boss?250:10}}}w.lastMelee=now
+      } else if(w.kind!=='melee'&&(w.mouse.down||k[' '])&&now-w.lastShot>w.rate){
+        if(w.kind==='shotgun'){for(let i=-2;i<=2;i++){const a=aim+i*.16;w.bullets.push({x:p.x,y:p.y,vx:Math.cos(a)*440,vy:Math.sin(a)*440,life:.65,damage:w.damage,kind:'pellet'})}}
+        else w.bullets.push({x:p.x,y:p.y,vx:Math.cos(aim)*(w.kind==='laser'?760:520),vy:Math.sin(aim)*(w.kind==='laser'?760:520),life:w.kind==='laser'?1.5:1.2,damage:w.damage,pierce:w.kind==='laser'?4:1,kind:w.kind})
+        w.lastShot=now
+      }
+      if(w.pet&&now-w.lastPetShot> (pets.find(x=>x.code===w.pet)?.rate||1200)){
+        const target=w.enemies.filter(e=>!e.dead).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0]
+        if(target){const a=Math.atan2(target.y-p.y,target.x-p.x),pet=pets.find(x=>x.code===w.pet);w.bullets.push({x:p.x-19,y:p.y-19,vx:Math.cos(a)*430,vy:Math.sin(a)*430,life:1.4,damage:pet?.damage||1,pierce:1,kind:'pet'})}w.lastPetShot=now
+      }
       for(const b of w.bullets){b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt}
-      for(const e of w.enemies){const a=Math.atan2(p.y-e.y,p.x-e.x);e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;if(Math.hypot(p.x-e.x,p.y-e.y)<p.r+e.r)p.hp-=16*dt}
-      for(const b of w.bullets)for(const e of w.enemies)if(!e.dead&&b.life>0&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage;b.life=0;if(e.hp<=0){e.dead=true;w.kills++;w.score+=10}}
+      for(const e of w.enemies){const a=Math.atan2(p.y-e.y,p.x-e.x);e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;if(Math.hypot(p.x-e.x,p.y-e.y)<p.r+e.r)p.hp-=(e.boss?24:16)*dt}
+      for(const b of w.bullets)for(const e of w.enemies)if(!e.dead&&b.life>0&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+5){e.hp-=b.damage;if(b.pierce>1)b.pierce--;else b.life=0;if(e.hp<=0){e.dead=true;w.kills++;w.score+=e.boss?250:10}}
       w.enemies=w.enemies.filter(e=>!e.dead);w.bullets=w.bullets.filter(b=>b.life>0&&b.x>-5&&b.x<845&&b.y>-5&&b.y<485)
-      if(p.hp<=0){p.hp=0;w.status='over';setHud({wave:w.wave,score:w.score,hp:0,kills:w.kills,status:'over',weapon:w.weapon});setNotice('Run over — your score and kills are shown below.');onFinish?.('arena',w.score)}
-      else if(w.spawned===w.need&&w.enemies.length===0){w.status='shop';setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:'shop',weapon:w.weapon});setNotice(`Wave ${w.wave} cleared! Choose an owned weapon or buy a new one below.`)}
-      if(now-w.lastHud>120){w.lastHud=now;setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:w.status,weapon:w.weapon})}
+      if(p.hp<=0){p.hp=0;w.status='over';setHud({wave:w.wave,score:w.score,hp:0,kills:w.kills,status:'over',weapon:w.weapon,boss:false});setNotice('Run over — your score and kills are shown below.');onFinish?.('arena',w.score)}
+      else if(w.spawned===w.need&&w.enemies.length===0){w.status='shop';setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:'shop',weapon:w.weapon,boss:false});setNotice(`Wave ${w.wave} cleared! Choose an owned weapon or buy a new one below.`)}
+      if(now-w.lastHud>120){w.lastHud=now;setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:w.status,weapon:w.weapon,boss:w.enemies.some(e=>e.boss)})}
       ctx.fillStyle='#0c101a';ctx.fillRect(0,0,840,480);ctx.strokeStyle='#1e293b';ctx.lineWidth=1;for(let x=0;x<840;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,480);ctx.stroke()}for(let y=0;y<480;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(840,y);ctx.stroke()}
       ctx.fillStyle='#60a5fa';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#dbeafe';ctx.lineWidth=3;ctx.stroke()
-      ctx.fillStyle='#fbbf24';for(const b of w.bullets){ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill()}
-      for(const e of w.enemies){ctx.fillStyle='#a855f7';ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f5d0fe';ctx.fillRect(e.x-e.r,e.y-e.r-7,e.r*2*(e.hp/(1+Math.floor(w.wave/4))),3)}
-      ctx.fillStyle='#e2e8f0';ctx.font='13px system-ui';ctx.fillText(`WAVE ${w.wave} · MONSTERS ${w.enemies.length+(w.need-w.spawned)} · ${w.weapon}`,14,22)
+      if(w.pet){ctx.fillStyle=w.pet==='arena_pet_fox'?'#fb923c':w.pet==='arena_pet_slime'?'#4ade80':'#c4b5fd';ctx.beginPath();ctx.arc(p.x-22,p.y-22,8,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#f8fafc';ctx.lineWidth=2;ctx.stroke()}
+      for(const b of w.bullets){ctx.fillStyle=b.kind==='laser'?'#67e8f9':b.kind==='pet'?'#86efac':b.kind==='plasma'?'#c084fc':'#fbbf24';ctx.beginPath();ctx.arc(b.x,b.y,b.kind==='laser'?5:4,0,Math.PI*2);ctx.fill()}
+      for(const e of w.enemies){ctx.fillStyle=e.boss?'#dc2626':'#a855f7';ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fill();ctx.fillStyle=e.boss?'#fecaca':'#f5d0fe';ctx.fillRect(e.x-e.r,e.y-e.r-8,e.r*2*(e.hp/e.maxHp),4);if(e.boss){ctx.strokeStyle='#fca5a5';ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,e.r+5,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#fff';ctx.font='bold 12px system-ui';ctx.fillText('BOSS',e.x-16,e.y-e.r-15)}}
+      ctx.fillStyle='#e2e8f0';ctx.font='13px system-ui';ctx.fillText(`${w.bossWave?'BOSS WAVE · ':''}WAVE ${w.wave} · MONSTERS ${w.enemies.length+(w.need-w.spawned)} · ${w.weapon}`,14,22)
       frame=requestAnimationFrame(loop)
     }
     frame=requestAnimationFrame(loop)
     return()=>{cancelAnimationFrame(frame);window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);canvas.removeEventListener('pointermove',pointer);canvas.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up)}
   },[runId,onFinish])
   const coins=Number(playerStats?.coins||0)
-  return <div className="panel arena-panel"><div className="lobby-row"><div><h3>👾 Arena survival</h3><p className="muted">Move, aim and survive monster waves. Your account coins buy permanent weapons.</p></div><div className="arena-hud"><strong>Wave {hud.wave}</strong><strong>Score {hud.score}</strong><strong>HP {hud.hp}</strong><strong>🪙 {coins}</strong></div></div>
+  const isOwned=item=>weapons.some(w=>w.code===item.code)?owned.includes(item.code):ownedPets.includes(item.code)
+  return <div className="panel arena-panel"><div className="lobby-row"><div><h3>👾 Arena survival</h3><p className="muted">Move, aim and survive monster waves. Bosses appear every 5 waves. Account coins unlock permanent gear and companions.</p></div><div className="arena-hud"><strong>Wave {hud.wave}</strong><strong>Score {hud.score}</strong><strong>HP {hud.hp}</strong><strong>🪙 {coins}</strong></div></div>
     <canvas ref={canvasRef} width="840" height="480" className="arena-canvas" tabIndex="0" aria-label="Arena shooter game area" />
     <p className="muted">{notice}</p>
     {hud.status==='ready'&&<button className="primary" onClick={()=>start()}>Start survival</button>}
     {hud.status==='over'&&<div className="arena-shop"><h3>Run complete</h3><p>Score: {hud.score} · Monsters defeated: {hud.kills}</p><button className="primary" onClick={()=>start()}>Play again</button></div>}
-    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — choose your weapon</h3><div className="weapon-grid">{weapons.filter(x=>owned.includes(x.code)).map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.damage} damage · {Math.round(1000/item.rate)} shots/sec</span><button className="primary" onClick={()=>continueWave(item.name)}>Equip & continue</button></div>)}</div></div>}
-    <div className="arena-shop"><h3>🛒 Permanent weapon shop</h3><p className="muted">Purchases use your real RLM account coins and stay unlocked for future runs.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.cost===0?'Free':`${item.cost} account coins`}</span>{owned.includes(item.code)?<span className="muted">✓ Owned</span>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyWeapon(item)}>{coins<item.cost?'Not enough coins':`Buy · ${item.cost}`}</button>}</div>)}</div>{shopMessage&&<p className="status">{shopMessage}</p>}</div>
+    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — choose your loadout</h3><div className="weapon-grid">{weapons.filter(x=>owned.includes(x.code)).map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><button className="primary" onClick={()=>continueWave(item.name)}>Equip & continue</button></div>)}</div></div>}
+    <div className="arena-shop"><h3>🛒 Weapon shop</h3><p className="muted">Permanent weapons stay unlocked on your RLM account.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.cost===0?'Free':`${item.cost} account coins`}</span>{isOwned(item)?<span className="muted">✓ Owned</span>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyItem(item)}>{coins<item.cost?'Not enough coins':`Buy · ${item.cost}`}</button>}</div>)}</div></div>
+    <div className="arena-shop"><h3>🐾 Companion pets</h3><p className="muted">Your equipped pet automatically fires support shots while you play.</p><div className="weapon-grid">{pets.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.cost} account coins</span>{ownedPets.includes(item.code)?<button className={activePet===item.code?'primary':'secondary'} onClick={()=>{setActivePet(activePet===item.code?'':item.code);if(worldRef.current)worldRef.current.pet=activePet===item.code?'':item.code}}>{activePet===item.code?'Equipped ✓':'Equip pet'}</button>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyItem(item)}>{coins<item.cost?'Not enough coins':`Buy · ${item.cost}`}</button>}</div>)}</div>{activePet&&<p className="status">Equipped: {pets.find(x=>x.code===activePet)?.name}</p>}</div>
+    {shopMessage&&<p className="status">{shopMessage}</p>}
   </div>
 }
-
 function AIRacer({ onFinish }) {
   const canvasRef=React.useRef(null),worldRef=React.useRef(null),keys=React.useRef({}),finished=React.useRef(false)
   const [running,setRunning]=React.useState(false),[message,setMessage]=React.useState('Start the race. Hold W / ↑ to accelerate, S / ↓ to brake, and steer with A/D or ←/→.'),[lap,setLap]=React.useState(0),[speed,setSpeed]=React.useState(0),[place,setPlace]=React.useState(1)
