@@ -402,3 +402,4 @@ img {
   font-weight: 800;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
 }
+.level-xp-track{height:10px;background:rgba(100,116,139,.25);border-radius:99px;overflow:hidden;margin:10px 0 4px}.level-xp-track span{display:block;height:100%;background:linear-gradient(90deg,#7c3aed,#38bdf8);border-radius:99px;transition:width .25s ease}
