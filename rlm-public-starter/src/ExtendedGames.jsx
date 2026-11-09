@@ -115,6 +115,64 @@ const ADVENTURE_MAPS = {
 };
 const freshAdventureSave = () => ({ region:'crimson', x:3, y:3, discovered:['crimson'], completedQuests:[], inventory:[], discoveries:[], dungeon:{entered:false, switches:[], key:false, guardian:false}, coins:0, xp:0, sideQuestProgress:{} });
 
+
+function PixelAdventureScene({ region, save, onMoveTo }) {
+  const canvasRef = React.useRef(null);
+  React.useEffect(() => {
+    const canvas=canvasRef.current, ctx=canvas?.getContext('2d'); if(!ctx)return;
+    const W=960,H=600,T=48,C=20,R=13;
+    const palettes={
+      crimson:{ground:'#9e3e50',ground2:'#8c3048',path:'#6b3545',path2:'#81505a',tree:'#b72f4b',tree2:'#e34d5a',trunk:'#49303c',water:'#3a9db0',rock:'#777b88',flower:'#f4b3c7'},
+      marsh:{ground:'#526b4c',ground2:'#405b43',path:'#82704d',path2:'#a08a5e',tree:'#326849',tree2:'#63945a',trunk:'#493d31',water:'#367f76',rock:'#788b77',flower:'#c7dc91'},
+      frost:{ground:'#c6d3d9',ground2:'#aebfc9',path:'#858eaa',path2:'#aab6c7',tree:'#426b73',tree2:'#71959a',trunk:'#5c6874',water:'#7bb8d0',rock:'#78859a',flower:'#f4f7fa'},
+      ember:{ground:'#9b5545',ground2:'#81443e',path:'#6e4a43',path2:'#936253',tree:'#8b3e32',tree2:'#c15a3d',trunk:'#49323a',water:'#647b83',rock:'#777078',flower:'#f5b34b'},
+      sky:{ground:'#789b83',ground2:'#638873',path:'#b2a77a',path2:'#d1c18a',tree:'#3f805a',tree2:'#82ae6d',trunk:'#584c40',water:'#66b9c5',rock:'#a3b4b3',flower:'#f2e6a1'}
+    };
+    const p=palettes[region.tone]||palettes.crimson;
+    const rand=(x,y)=>{const n=Math.sin(x*127.1+y*311.7+region.id.length*71)*43758.5453;return n-Math.floor(n)};
+    ctx.imageSmoothingEnabled=false;
+    for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+      const xx=x*T,yy=y*T;ctx.fillStyle=rand(x,y)>.53?p.ground:p.ground2;ctx.fillRect(xx,yy,T,T);
+      for(let k=0;k<5;k++){const rx=xx+5+rand(x*7+k,y*9)*38,ry=yy+5+rand(x*11,y*5+k)*38;ctx.fillStyle=rand(x+k,y-k)>.5?p.path2:p.flower;ctx.globalAlpha=.22;ctx.fillRect(rx,ry,3+rand(k,x)*4,3+rand(y,k)*4);ctx.globalAlpha=1;}
+    }
+    // Winding trail and clearings
+    ctx.fillStyle=p.path;ctx.beginPath();ctx.moveTo(0,420);ctx.lineTo(170,420);ctx.lineTo(250,350);ctx.lineTo(390,350);ctx.lineTo(470,260);ctx.lineTo(640,260);ctx.lineTo(710,180);ctx.lineTo(960,180);ctx.lineTo(960,235);ctx.lineTo(730,235);ctx.lineTo(665,315);ctx.lineTo(495,315);ctx.lineTo(420,405);ctx.lineTo(270,405);ctx.lineTo(190,475);ctx.lineTo(0,475);ctx.closePath();ctx.fill();
+    ctx.fillStyle=p.path2;ctx.globalAlpha=.35;for(let i=0;i<90;i++){const x=rand(i,4)*W,y=rand(9,i)*H;if((x>100&&x<850&&y>180&&y<490)&&rand(i,2)>.45)ctx.fillRect(x,y,5,4);}ctx.globalAlpha=1;
+    // ponds / river
+    if(region.tone==='crimson'||region.tone==='marsh'||region.tone==='frost'){
+      ctx.fillStyle=p.water;ctx.beginPath();ctx.ellipse(780,430,115,78,-.25,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffffff33';for(let i=0;i<18;i++)ctx.fillRect(700+rand(i,3)*150,390+rand(5,i)*70,10,3);
+      if(region.tone==='crimson'){ctx.fillStyle='#b7e7e6';ctx.fillRect(775,330,8,28);ctx.fillRect(767,350,24,8);}
+    }
+    // Pixel rocks and shrubs
+    for(let i=0;i<28;i++){const x=rand(i,19)*W,y=rand(21,i)*H;if((x<110&&y<100)||(x>W-110&&y>H-90))continue;ctx.fillStyle=p.rock;ctx.fillRect(x,y,18,13);ctx.fillStyle='#ffffff38';ctx.fillRect(x+3,y+2,7,3);ctx.fillStyle='#30384366';ctx.fillRect(x+4,y+11,14,3);}
+    // Forest clusters
+    for(let i=0;i<26;i++){
+      const x=rand(i,31)*W,y=rand(37,i)*H;if((x>300&&x<690&&y>180&&y<430)||(x>720&&x<900&&y>360&&y<510))continue;
+      ctx.fillStyle='#241d2a55';ctx.beginPath();ctx.ellipse(x+5,y+23,25,13,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=p.trunk;ctx.fillRect(x-5,y-2,13,30);ctx.fillStyle=p.tree;ctx.fillRect(x-22,y-26,48,34);ctx.fillRect(x-14,y-38,32,20);ctx.fillStyle=p.tree2;ctx.fillRect(x-13,y-27,14,10);ctx.fillRect(x+5,y-17,10,8);ctx.fillStyle='#ffffff22';ctx.fillRect(x-7,y-32,7,5);
+      if(region.tone==='crimson'){ctx.fillStyle='#ef6470';ctx.fillRect(x-19,y-18,7,6);ctx.fillRect(x+9,y-27,7,7);}
+      if(region.tone==='frost'){ctx.fillStyle='#eef5f8';ctx.fillRect(x-17,y-28,32,5);}
+    }
+    // Mushrooms, flowers, torches and ruins
+    for(let i=0;i<22;i++){const x=rand(i,71)*W,y=rand(73,i)*H;ctx.fillStyle=region.tone==='crimson'?'#f0d7c8':'#d8e8bd';ctx.fillRect(x,y+5,4,8);ctx.fillStyle=region.tone==='crimson'?'#ed5666':p.flower;ctx.fillRect(x-5,y,14,6);ctx.fillRect(x-2,y-3,7,4);}
+    ctx.fillStyle='#51434a';ctx.fillRect(70,60,110,24);ctx.fillRect(70,60,14,95);ctx.fillStyle='#897b76';ctx.fillRect(75,65,100,12);ctx.fillRect(75,65,8,82);ctx.fillStyle='#3e343c';ctx.fillRect(94,86,62,5);
+    // Ruined stone doorway
+    ctx.fillStyle='#5c5965';ctx.fillRect(800,65,100,76);ctx.fillStyle='#8e929d';ctx.fillRect(792,58,116,16);ctx.fillRect(792,58,13,83);ctx.fillRect(895,58,13,83);ctx.fillStyle='#2a2531';ctx.fillRect(826,83,49,58);ctx.fillStyle='#a5a8a9';ctx.fillRect(836,91,29,5);
+    // Enemy sprites
+    const drawSlime=(x,y,color)=>{ctx.fillStyle='#241d2a66';ctx.fillRect(x-17,y+12,36,7);ctx.fillStyle=color;ctx.fillRect(x-17,y-5,34,18);ctx.fillRect(x-11,y-12,22,9);ctx.fillStyle='#f4e8c9';ctx.fillRect(x-9,y,4,5);ctx.fillRect(x+5,y,4,5);ctx.fillStyle='#33263a';ctx.fillRect(x-8,y+2,3,3);ctx.fillRect(x+6,y+2,3,3);ctx.fillStyle='#ffffff55';ctx.fillRect(x-10,y-8,7,4);};
+    drawSlime(585,165,region.tone==='frost'?'#8dc9d7':'#c28a45');drawSlime(650,220,'#b78c4d');drawSlime(350,470,'#73834a');drawSlime(875,315,'#7165a6');
+    // NPC sprite
+    ctx.fillStyle='#25202b66';ctx.fillRect(420,300,40,9);ctx.fillStyle='#b9c9a4';ctx.fillRect(425,270,28,28);ctx.fillStyle='#e6c59a';ctx.fillRect(430,255,20,19);ctx.fillStyle='#315b55';ctx.fillRect(428,252,23,9);ctx.fillStyle='#f3dfbd';ctx.fillRect(435,263,3,3);ctx.fillRect(445,263,3,3);ctx.fillStyle='#47334a';ctx.fillRect(429,296,8,12);ctx.fillRect(444,296,8,12);
+    // Player sprite
+    const px=100+save.x*105,py=125+save.y*54;
+    ctx.fillStyle='#211b2b77';ctx.fillRect(px-18,py+19,38,8);ctx.fillStyle='#345c9a';ctx.fillRect(px-13,py-4,26,24);ctx.fillStyle='#e6bb8e';ctx.fillRect(px-10,py-20,20,18);ctx.fillStyle='#2e574e';ctx.fillRect(px-12,py-23,24,8);ctx.fillRect(px-15,py-18,7,9);ctx.fillStyle='#f6e4c7';ctx.fillRect(px-5,py-12,3,3);ctx.fillRect(px+5,py-12,3,3);ctx.fillStyle='#4b3341';ctx.fillRect(px-11,py+18,8,9);ctx.fillRect(px+3,py+18,8,9);ctx.fillStyle='#d9b55d';ctx.fillRect(px+13,py-3,4,20);
+    // tiny labels and area edge details
+    ctx.fillStyle='#fff0d6';ctx.font='bold 16px monospace';ctx.fillText(region.name.toUpperCase(),22,30);ctx.fillStyle='#ffffffaa';ctx.font='11px monospace';ctx.fillText('CLICK A CLEAR TILE TO MOVE',22,49);
+  },[region,save.x,save.y]);
+  function click(e){const r=canvasRef.current.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;onMoveTo(Math.max(0,Math.min(7,Math.floor(x*8))),Math.max(0,Math.min(7,Math.floor(y*8))));}
+  return <canvas ref={canvasRef} width={960} height={600} className="adventure-pixel-canvas" onClick={click} aria-label="Top-down pixel art adventure world" />;
+}
+
 function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
   const [save,setSave] = React.useState(freshAdventureSave);
   const [loading,setLoading] = React.useState(true);
@@ -230,7 +288,7 @@ function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
     <div className="adventure-layout">
       <div className={`adventure-scene biome-${region.tone}`}>
         <div className="adventure-scene-top"><span>{region.icon} {region.name}</span><small>Move with the arrows · Discover hidden places</small></div>
-        <div className="adventure-tile-map">{mapTiles.map((tile,i)=>{const x=i%8,y=Math.floor(i/8),isPlayer=x===save.x&&y===save.y;return <button key={`${save.region}-${i}`} className={`adventure-tile ${isPlayer?'player-tile':''}`} onClick={()=>{setSave(s=>({...s,x,y,discoveries:s.discoveries.includes(`${s.region}:${x}:${y}`)?s.discoveries:[...s.discoveries,`${s.region}:${x}:${y}`]}));setMessage(`You explored tile ${x+1}, ${y+1}.`)}} title={`Explore ${x+1}, ${y+1}`}>{isPlayer?'🧝':tile}</button>})}</div>
+        <PixelAdventureScene region={region} save={save} onMoveTo={(x,y)=>{const key=`${save.region}:${x}:${y}`;update({x,y,discoveries:save.discoveries.includes(key)?save.discoveries:[...save.discoveries,key]});setMessage(`You explored ${region.name} · ${x+1}, ${y+1}.`)}} />
         <div className="adventure-controls"><button onClick={()=>move(0,-1)}>▲</button><div><button onClick={()=>move(-1,0)}>◀</button><button onClick={()=>move(0,1)}>▼</button><button onClick={()=>move(1,0)}>▶</button></div></div>
       </div>
       <aside className="adventure-side">
