@@ -101,97 +101,149 @@ function SoloChess({ onFinish }) {
 function ArenaShooter({ onFinish, supabase, playerStats, onStatsRefresh }) {
   const canvasRef = React.useRef(null)
   const worldRef = React.useRef(null)
-  const [hud,setHud] = React.useState({wave:1,score:0,hp:100,kills:0,status:'ready',weapon:'Pistol'})
+  const [hud,setHud] = React.useState({wave:1,score:0,hp:100,kills:0,status:'ready',weapon:'Pistol',boss:false})
   const [owned,setOwned] = React.useState(['arena_pistol'])
+  const [ownedPets,setOwnedPets] = React.useState([])
+  const [activePet,setActivePet] = React.useState('')
   const [shopBusy,setShopBusy] = React.useState(false)
   const [shopMessage,setShopMessage] = React.useState('')
   const [weapon,setWeapon] = React.useState('Pistol')
   const [notice,setNotice] = React.useState('WASD to move · Mouse to aim and shoot · Space also fires')
   const [runId,setRunId] = React.useState(0)
+  const [quest,setQuest] = React.useState({kills:0,bosses:0,clears:0})
+  const monsterTypes = [
+    {id:'forest',name:'Forest',color:'#70c96b',glow:'#b7ff8a',weak:'fire',shape:'horns'},
+    {id:'swamp',name:'Swamp',color:'#789447',glow:'#d4ed72',weak:'ice',shape:'spikes'},
+    {id:'ice',name:'Ice',color:'#67d9f4',glow:'#d7fbff',weak:'fire',shape:'crystal'},
+    {id:'lava',name:'Lava',color:'#e84c25',glow:'#ffb347',weak:'water',shape:'horns'},
+    {id:'steam',name:'Steam',color:'#b7c7d8',glow:'#f4fbff',weak:'plasma',shape:'mist'},
+    {id:'cloud',name:'Cloud',color:'#c4b8ff',glow:'#ffffff',weak:'lightning',shape:'mist'},
+    {id:'water',name:'Water',color:'#258fe0',glow:'#8be5ff',weak:'lightning',shape:'fins'},
+    {id:'fire',name:'Fire',color:'#ff7a24',glow:'#ffe36e',weak:'water',shape:'horns'},
+    {id:'alien',name:'Alien',color:'#a4e64f',glow:'#e3ff80',weak:'plasma',shape:'eyes'},
+    {id:'angel',name:'Angel',color:'#f0e5b2',glow:'#fff6c9',weak:'relic',shape:'wings'},
+    {id:'relic',name:'Relic',color:'#b18a67',glow:'#e9c58e',weak:'lightning',shape:'runes'},
+    {id:'aku',name:'Aku',color:'#a23bd2',glow:'#ff65db',weak:'relic',shape:'shadow'}
+  ]
   const weapons = [
-    {code:'arena_pistol',name:'Pistol',cost:0,damage:1,rate:260,desc:'Reliable starter sidearm'},
-    {code:'arena_burst_rifle',name:'Burst rifle',cost:150,damage:1,rate:125,desc:'Fast firing for close and mid range'},
-    {code:'arena_shotgun',name:'Scattergun',cost:220,damage:4,rate:620,desc:'Heavy close-range damage'},
-    {code:'arena_plasma_blaster',name:'Plasma blaster',cost:350,damage:3,rate:300,desc:'Powerful energy shots'},
-    {code:'arena_laser_rifle',name:'Laser rifle',cost:480,damage:2,rate:170,desc:'Fast piercing-style energy beam'},
-    {code:'arena_knife',name:'Arc knife',cost:280,damage:5,rate:520,desc:'Short-range charged energy strike'}
+    {code:'arena_pistol',name:'Pistol',cost:0,damage:1,rate:260,desc:'Reliable starter sidearm',kind:'bullet',element:'kinetic',strong:[]},
+    {code:'arena_burst_rifle',name:'Burst rifle',cost:150,damage:1.5,rate:125,desc:'Fast three-round burst',kind:'bullet',element:'kinetic',strong:['alien']},
+    {code:'arena_shotgun',name:'Scattergun',cost:220,damage:2,rate:620,desc:'Five-pellet close-range blast',kind:'shotgun',element:'fire',strong:['forest','ice','swamp']},
+    {code:'arena_plasma_blaster',name:'Plasma blaster',cost:350,damage:3,rate:300,desc:'Superheated plasma disrupts steam and alien armour',kind:'plasma',element:'plasma',strong:['steam','alien']},
+    {code:'arena_laser_rifle',name:'Laser rifle',cost:480,damage:3,rate:180,desc:'Piercing beam with precision damage',kind:'laser',element:'lightning',strong:['cloud','water','relic']},
+    {code:'arena_knife',name:'Arc knife',cost:280,damage:5,rate:420,desc:'Short-range energy swipe',kind:'melee',element:'relic',strong:['angel','aku']},
+    {code:'arena_frost_cannon',name:'Frost cannon',cost:540,damage:4,rate:480,desc:'Freezes swamp and lava creatures',kind:'plasma',element:'ice',strong:['swamp','lava','fire']},
+    {code:'arena_storm_bow',name:'Storm bow',cost:650,damage:3,rate:340,desc:'Charged bolts crackle through water and cloud',kind:'laser',element:'lightning',strong:['water','cloud','relic']},
+    {code:'arena_sun_spear',name:'Sun spear',cost:780,damage:5,rate:520,desc:'Radiant relic energy pierces shadow monsters',kind:'laser',element:'relic',strong:['aku','angel']}
+  ]
+  const pets = [
+    {code:'arena_pet_drone',name:'Scout drone',cost:300,desc:'Fires support bolts',damage:1,rate:1100},
+    {code:'arena_pet_slime',name:'Glow slime',cost:420,desc:'A friendly companion with splash damage',damage:2,rate:1500},
+    {code:'arena_pet_fox',name:'Ember fox',cost:600,desc:'A speedy companion with stronger shots',damage:2,rate:900}
   ]
   React.useEffect(()=>{
     let alive=true
     async function loadOwned(){
       if(!supabase)return
-      const {data,error}=await supabase.from('user_inventory').select('item_code').eq('user_id',(await supabase.auth.getUser()).data.user?.id)
-      if(alive&&!error)setOwned(['arena_pistol',...(data||[]).map(x=>x.item_code).filter(x=>weapons.some(w=>w.code===x))])
+      const {data:userData}=await supabase.auth.getUser()
+      const userId=userData?.user?.id
+      if(!userId)return
+      const {data,error}=await supabase.from('user_inventory').select('item_code').eq('user_id',userId)
+      if(alive&&!error){const codes=(data||[]).map(x=>x.item_code);setOwned(['arena_pistol',...codes.filter(x=>weapons.some(w=>w.code===x))]);setOwnedPets(codes.filter(x=>pets.some(p=>p.code===x)))}
     }
-    loadOwned()
-    return()=>{alive=false}
+    loadOwned();return()=>{alive=false}
   },[supabase])
-  async function buyWeapon(item){
-    if(item.code==='arena_pistol'||owned.includes(item.code)||shopBusy)return
+  async function buyItem(item){
+    if(owned.includes(item.code)||ownedPets.includes(item.code)||shopBusy)return
+    if(!supabase){setShopMessage('Sign in to buy permanent items.');return}
     setShopBusy(true);setShopMessage('')
-    const {data,error}=await supabase.rpc('rlm_buy_arena_weapon',{p_item_code:item.code})
+    const {error}=await supabase.rpc('rlm_buy_arena_weapon',{p_item_code:item.code})
     setShopBusy(false)
-    if(error){setShopMessage(`Purchase failed: ${error.message}`);return false}
-    setOwned(v=>v.includes(item.code)?v:[...v,item.code]);setShopMessage(`${item.name} unlocked!`);onStatsRefresh?.();return true
+    if(error){setShopMessage(`Purchase failed: ${error.message}`);return}
+    if(weapons.some(w=>w.code===item.code))setOwned(v=>[...v,item.code]);else{setOwnedPets(v=>[...v,item.code]);setActivePet(item.code)}
+    setShopMessage(`${item.name} unlocked!`);onStatsRefresh?.()
   }
-  async function buyAndEquip(item){
-    const purchased=await buyWeapon(item)
-    if(purchased)continueWave(item.name,true)
-  }
-  const start = (selectedWeapon=weapon) => {
+  const start=(selectedWeapon=weapon)=>{
     const item=weapons.find(x=>x.name===selectedWeapon&&owned.includes(x.code))||weapons[0]
-    worldRef.current = {player:{x:420,y:240,r:13,hp:100},enemies:[],bullets:[],keys:{},mouse:{x:620,y:240,down:false},wave:1,score:0,kills:0,spawned:0,need:6,spawnClock:0,lastShot:0,lastHud:0,status:'playing',weapon:item.name,damage:item.damage,rate:item.rate}
-    setWeapon(item.name);setHud({wave:1,score:0,hp:100,kills:0,status:'playing',weapon:item.name});setNotice('Wave 1 — clear all monsters!');setRunId(v=>v+1)
+    worldRef.current={player:{x:420,y:240,r:14,hp:100},enemies:[],bullets:[],particles:[],keys:{},mouse:{x:620,y:240,down:false},wave:1,score:0,kills:0,spawned:0,need:7,spawnClock:0,lastShot:0,lastHud:0,lastPetShot:0,lastMelee:0,pet:activePet,status:'playing',weapon:item.name,weaponCode:item.code,damage:item.damage,rate:item.rate,kind:item.kind,element:item.element,strong:item.strong,bossWave:false}
+    setQuest({kills:0,bosses:0,clears:0});setWeapon(item.name);setHud({wave:1,score:0,hp:100,kills:0,status:'playing',weapon:item.name,boss:false});setNotice('Wave 1 — the rift is opening. Clear the monsters!');setRunId(v=>v+1)
   }
-  function continueWave(selectedWeapon=weapon,justPurchased=false){
-    const w=worldRef.current,item=weapons.find(x=>x.name===selectedWeapon&&(justPurchased||owned.includes(x.code)))||weapons[0]
-    if(!w)return
-    w.weapon=item.name;w.damage=item.damage;w.rate=item.rate;w.wave+=1;w.need=6+(w.wave-1)*3;w.spawned=0;w.spawnClock=0;w.status='playing'
-    setWeapon(item.name);setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name}));setNotice(`Wave ${w.wave} — ${item.name} equipped.`);setRunId(v=>v+1)
+  function continueWave(selectedWeapon=weapon){
+    const w=worldRef.current,item=weapons.find(x=>x.name===selectedWeapon&&owned.includes(x.code))||weapons[0];if(!w)return
+    w.weapon=item.name;w.weaponCode=item.code;w.damage=item.damage;w.rate=item.rate;w.kind=item.kind;w.element=item.element;w.strong=item.strong;w.pet=activePet;w.wave+=1;w.need=7+(w.wave-1)*3;w.spawned=0;w.spawnClock=0;w.bossWave=w.wave%5===0;w.status='playing'
+    setWeapon(item.name);setHud(h=>({...h,wave:w.wave,status:'playing',weapon:item.name,boss:w.bossWave}));setNotice(w.bossWave?`DUNGEON GUARDIAN · WAVE ${w.wave}`:`Wave ${w.wave} — ${item.name} equipped.`);setRunId(v=>v+1)
   }
   React.useEffect(()=>{
-    const canvas=canvasRef.current, ctx=canvas?.getContext('2d'), w=worldRef.current
-    if(!canvas||!ctx||!w||w.status!=='playing') return
-    const keyDown=e=>{if(['w','a','s','d',' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();w.keys[e.key.toLowerCase()]=true}}
+    const canvas=canvasRef.current,ctx=canvas?.getContext('2d'),w=worldRef.current
+    if(!canvas||!ctx||!w||w.status!=='playing')return
+    const keyDown=e=>{if(['w','a','s','d',' ','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())){e.preventDefault();w.keys[e.key.toLowerCase()]=true}}
     const keyUp=e=>{w.keys[e.key.toLowerCase()]=false}
     const pointer=e=>{const r=canvas.getBoundingClientRect();w.mouse.x=(e.clientX-r.left)*canvas.width/r.width;w.mouse.y=(e.clientY-r.top)*canvas.height/r.height}
     const down=e=>{pointer(e);w.mouse.down=true;canvas.focus()},up=()=>{w.mouse.down=false}
     window.addEventListener('keydown',keyDown);window.addEventListener('keyup',keyUp);canvas.addEventListener('pointermove',pointer);canvas.addEventListener('pointerdown',down);window.addEventListener('pointerup',up)
     let frame=0,last=performance.now()
+    const particle=(x,y,color,n=5)=>{for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=35+Math.random()*130;w.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.25+Math.random()*.5,color})}}
     const loop=now=>{
-      const dt=Math.min(.035,(now-last)/1000);last=now
-      if(w.status!=='playing'){cancelAnimationFrame(frame);return}
-      const p=w.player,k=w.keys
-      let dx=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0),dy=(k.s||k.arrowdown?1:0)-(k.w||k.arrowup?1:0),len=Math.hypot(dx,dy)||1
-      p.x=Math.max(18,Math.min(822,p.x+dx/len*220*dt));p.y=Math.max(18,Math.min(462,p.y+dy/len*220*dt))
-      w.spawnClock+=dt
-      if(w.spawned<w.need&&w.spawnClock>Math.max(.35,1.25-w.wave*.055)){w.spawnClock=0;const edge=Math.floor(Math.random()*4),x=edge===0?12:edge===1?828:Math.random()*840,y=edge===2?12:edge===3?468:Math.random()*480;w.enemies.push({x,y,r:10+Math.min(8,w.wave),hp:1+Math.floor(w.wave/4),speed:35+w.wave*4});w.spawned++}
-      if((w.mouse.down||k[' '])&&now-w.lastShot>w.rate){const a=Math.atan2(w.mouse.y-p.y,w.mouse.x-p.x);w.bullets.push({x:p.x,y:p.y,vx:Math.cos(a)*520,vy:Math.sin(a)*520,life:1.2,damage:w.damage});w.lastShot=now}
+      const dt=Math.min(.035,(now-last)/1000);last=now;if(w.status!=='playing'){cancelAnimationFrame(frame);return}
+      const p=w.player,k=w.keys;let dx=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0),dy=(k.s||k.arrowdown?1:0)-(k.w||k.arrowup?1:0),len=Math.hypot(dx,dy)||1
+      p.x=Math.max(22,Math.min(818,p.x+dx/len*235*dt));p.y=Math.max(22,Math.min(458,p.y+dy/len*235*dt));w.spawnClock+=dt
+      if(w.spawned<w.need&&w.spawnClock>Math.max(.28,1.1-w.wave*.045)){
+        w.spawnClock=0;const boss=w.bossWave&&w.spawned===0;const edge=Math.floor(Math.random()*4),x=edge===0?10:edge===1?830:Math.random()*840,y=edge===2?10:edge===3?470:Math.random()*480
+        const type=monsterTypes[Math.floor(Math.random()*monsterTypes.length)],hp=boss?95+w.wave*12:2+Math.floor(w.wave/3)
+        w.enemies.push({x,y,r:boss?32:14+Math.min(8,w.wave*.35),hp,maxHp:hp,speed:boss?32+w.wave*.8:42+w.wave*3.1,boss,type,phase:Math.random()*6})
+        w.spawned++
+      }
+      const aim=Math.atan2(w.mouse.y-p.y,w.mouse.x-p.x)
+      if(w.kind==='melee'&&(w.mouse.down||k[' '])&&now-w.lastMelee>w.rate){for(const e of w.enemies){const a=Math.atan2(e.y-p.y,e.x-p.x),d=Math.hypot(e.x-p.x,e.y-p.y);if(d<94&&Math.abs(Math.atan2(Math.sin(a-aim),Math.cos(a-aim)))<1){const mult=w.strong.includes(e.type.id)?2.2:1;e.hp-=w.damage*2*mult;if(e.hp<=0&&!e.dead){e.dead=true;w.kills++;w.score+=e.boss?300:15;particle(e.x,e.y,e.type.glow,12)}}}w.lastMelee=now}
+      else if(w.kind!=='melee'&&(w.mouse.down||k[' '])&&now-w.lastShot>w.rate){if(w.kind==='shotgun'){for(let i=-2;i<=2;i++){const a=aim+i*.16;w.bullets.push({x:p.x,y:p.y,vx:Math.cos(a)*450,vy:Math.sin(a)*450,life:.7,damage:w.damage,kind:'pellet',element:w.element,strong:w.strong})}}else w.bullets.push({x:p.x,y:p.y,vx:Math.cos(aim)*(w.kind==='laser'?780:540),vy:Math.sin(aim)*(w.kind==='laser'?780:540),life:w.kind==='laser'?1.5:1.2,damage:w.damage,pierce:w.kind==='laser'?4:1,kind:w.kind,element:w.element,strong:w.strong});w.lastShot=now}
+      if(w.pet&&now-w.lastPetShot>(pets.find(x=>x.code===w.pet)?.rate||1200)){const target=w.enemies.filter(e=>!e.dead).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];if(target){const a=Math.atan2(target.y-p.y,target.x-p.x),pet=pets.find(x=>x.code===w.pet);w.bullets.push({x:p.x-20,y:p.y-20,vx:Math.cos(a)*440,vy:Math.sin(a)*440,life:1.4,damage:pet?.damage||1,pierce:1,kind:'pet',element:'kinetic',strong:[]})}w.lastPetShot=now}
       for(const b of w.bullets){b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt}
-      for(const e of w.enemies){const a=Math.atan2(p.y-e.y,p.x-e.x);e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;if(Math.hypot(p.x-e.x,p.y-e.y)<p.r+e.r)p.hp-=16*dt}
-      for(const b of w.bullets)for(const e of w.enemies)if(!e.dead&&b.life>0&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage;b.life=0;if(e.hp<=0){e.dead=true;w.kills++;w.score+=10}}
-      w.enemies=w.enemies.filter(e=>!e.dead);w.bullets=w.bullets.filter(b=>b.life>0&&b.x>-5&&b.x<845&&b.y>-5&&b.y<485)
-      if(p.hp<=0){p.hp=0;w.status='over';setHud({wave:w.wave,score:w.score,hp:0,kills:w.kills,status:'over',weapon:w.weapon});setNotice('Run over — your score and kills are shown below.');onFinish?.('arena',w.score)}
-      else if(w.spawned===w.need&&w.enemies.length===0){w.status='shop';setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:'shop',weapon:w.weapon});setNotice(`Wave ${w.wave} cleared! Choose an owned weapon or buy a new one below.`)}
-      if(now-w.lastHud>120){w.lastHud=now;setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:w.status,weapon:w.weapon})}
-      ctx.fillStyle='#0c101a';ctx.fillRect(0,0,840,480);ctx.strokeStyle='#1e293b';ctx.lineWidth=1;for(let x=0;x<840;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,480);ctx.stroke()}for(let y=0;y<480;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(840,y);ctx.stroke()}
-      ctx.fillStyle='#60a5fa';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#dbeafe';ctx.lineWidth=3;ctx.stroke()
-      ctx.fillStyle='#fbbf24';for(const b of w.bullets){ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill()}
-      for(const e of w.enemies){ctx.fillStyle='#a855f7';ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f5d0fe';ctx.fillRect(e.x-e.r,e.y-e.r-7,e.r*2*(e.hp/(1+Math.floor(w.wave/4))),3)}
-      ctx.fillStyle='#e2e8f0';ctx.font='13px system-ui';ctx.fillText(`WAVE ${w.wave} · MONSTERS ${w.enemies.length+(w.need-w.spawned)} · ${w.weapon}`,14,22)
+      for(const e of w.enemies){const a=Math.atan2(p.y-e.y,p.x-e.x);e.phase+=dt*3;e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;if(Math.hypot(p.x-e.x,p.y-e.y)<p.r+e.r)p.hp-=(e.boss?30:19)*dt}
+      for(const b of w.bullets)for(const e of w.enemies)if(!e.dead&&b.life>0&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+7){const bonus=(b.strong||[]).includes(e.type.id)?2.5:1;e.hp-=b.damage*bonus;if(bonus>1)particle(e.x,e.y,e.type.glow,3);if(b.pierce>1)b.pierce--;else b.life=0;if(e.hp<=0){e.dead=true;w.kills++;w.score+=e.boss?300:15;particle(e.x,e.y,e.type.glow,12);if(e.boss){setQuest(q=>({...q,bosses:q.bosses+1}))}}}
+      w.enemies=w.enemies.filter(e=>!e.dead);w.bullets=w.bullets.filter(b=>b.life>0&&b.x>-10&&b.x<850&&b.y>-10&&b.y<490)
+      for(const a of w.particles){a.x+=a.vx*dt;a.y+=a.vy*dt;a.life-=dt}w.particles=w.particles.filter(a=>a.life>0)
+      if(p.hp<=0){p.hp=0;w.status='over';setHud({wave:w.wave,score:w.score,hp:0,kills:w.kills,status:'over',weapon:w.weapon,boss:false});setNotice('The run has ended. Your dungeon progress is shown below.');onFinish?.('arena',w.score);onStatsRefresh?.()}
+      else if(w.spawned===w.need&&w.enemies.length===0){w.status='shop';setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:'shop',weapon:w.weapon,boss:false});setQuest(q=>({...q,kills:w.kills,clears:q.clears+1}));setNotice(`Wave ${w.wave} cleared! Choose gear before the next wave.`)}
+      if(now-w.lastHud>120){w.lastHud=now;setHud({wave:w.wave,score:w.score,hp:Math.ceil(p.hp),kills:w.kills,status:w.status,weapon:w.weapon,boss:w.enemies.some(e=>e.boss)})}
+      // atmospheric arena floor
+      const bg=ctx.createLinearGradient(0,0,840,480);bg.addColorStop(0,'#08101e');bg.addColorStop(.55,'#15152b');bg.addColorStop(1,'#080b16');ctx.fillStyle=bg;ctx.fillRect(0,0,840,480)
+      ctx.strokeStyle='rgba(106,130,185,.13)';ctx.lineWidth=1;for(let x=0;x<840;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,480);ctx.stroke()}for(let y=0;y<480;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(840,y);ctx.stroke()}
+      for(let i=0;i<24;i++){const x=(i*137+now*.012)%840,y=(i*83+Math.sin(now*.0005+i)*24)%480;ctx.fillStyle='rgba(147,197,253,.28)';ctx.fillRect(x,y,2,2)}
+      // player aura and character
+      ctx.save();ctx.shadowBlur=25;ctx.shadowColor='#55c8ff';ctx.fillStyle='rgba(52,180,255,.17)';ctx.beginPath();ctx.arc(p.x,p.y,27,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#173c69';ctx.beginPath();ctx.arc(p.x,p.y,15,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#9be7ff';ctx.lineWidth=3;ctx.stroke();ctx.fillStyle='#eafaff';ctx.beginPath();ctx.arc(p.x+Math.cos(aim)*7,p.y+Math.sin(aim)*7,4,0,Math.PI*2);ctx.fill();ctx.restore()
+      if(w.pet){ctx.fillStyle=w.pet==='arena_pet_fox'?'#fb923c':w.pet==='arena_pet_slime'?'#4ade80':'#c4b5fd';ctx.shadowBlur=14;ctx.shadowColor=ctx.fillStyle;ctx.beginPath();ctx.arc(p.x-25,p.y-23,9,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}
+      for(const b of w.bullets){ctx.save();ctx.shadowBlur=14;ctx.shadowColor=b.kind==='laser'?'#67e8f9':b.kind==='pet'?'#86efac':b.element==='fire'?'#ff713d':'#c084fc';ctx.fillStyle=ctx.shadowColor;ctx.beginPath();ctx.arc(b.x,b.y,b.kind==='laser'?5:4,0,Math.PI*2);ctx.fill();ctx.restore()}
+      // detailed monster silhouettes by class
+      for(const e of w.enemies){const t=e.type,r=e.r;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.sin(e.phase)*.06);ctx.shadowBlur=e.boss?28:17;ctx.shadowColor=t.glow;ctx.fillStyle=t.color
+        ctx.beginPath();ctx.ellipse(0,0,r*.82,r,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0
+        if(['horns','spikes','crystal'].includes(t.shape)){ctx.beginPath();ctx.moveTo(-r*.55,-r*.55);ctx.lineTo(-r*.95,-r*1.35);ctx.lineTo(-r*.18,-r*.8);ctx.moveTo(r*.55,-r*.55);ctx.lineTo(r*.95,-r*1.35);ctx.lineTo(r*.18,-r*.8);ctx.fillStyle=t.glow;ctx.fill()}
+        if(t.shape==='wings'){ctx.fillStyle=t.glow;ctx.beginPath();ctx.ellipse(-r*1.05,0,r*.7,r*.35,-.5,0,Math.PI*2);ctx.ellipse(r*1.05,0,r*.7,r*.35,.5,0,Math.PI*2);ctx.fill()}
+        if(t.shape==='fins'){ctx.fillStyle=t.glow;ctx.beginPath();ctx.moveTo(-r*.6,0);ctx.lineTo(-r*1.35,-r*.7);ctx.lineTo(-r*1.1,r*.6);ctx.moveTo(r*.6,0);ctx.lineTo(r*1.35,-r*.7);ctx.lineTo(r*1.1,r*.6);ctx.fill()}
+        if(t.shape==='mist'){ctx.fillStyle=t.glow;for(let i=-1;i<=1;i++){ctx.beginPath();ctx.arc(i*r*.5,-r*.8,r*.42,0,Math.PI*2);ctx.fill()}}
+        if(t.shape==='runes'||t.shape==='shadow'){ctx.strokeStyle=t.glow;ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,r*.68,0,Math.PI*2);ctx.stroke();ctx.fillStyle=t.glow;ctx.fillRect(-r*.7,-r*.1,r*1.4,2)}
+        ctx.fillStyle='#170f20';ctx.beginPath();ctx.ellipse(-r*.3,-r*.12,r*.13,r*.2,0,0,Math.PI*2);ctx.ellipse(r*.3,-r*.12,r*.13,r*.2,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-r*.3,-r*.14,r*.055,0,Math.PI*2);ctx.arc(r*.3,-r*.14,r*.055,0,Math.PI*2);ctx.fill()
+        if(e.boss){ctx.strokeStyle=t.glow;ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,r+7,0,Math.PI*2);ctx.stroke()}
+        ctx.restore();ctx.fillStyle='#211827';ctx.fillRect(e.x-r,e.y-r-13,r*2,5);ctx.fillStyle=t.glow;ctx.fillRect(e.x-r,e.y-r-13,r*2*Math.max(0,e.hp/e.maxHp),5);ctx.fillStyle='#f4efff';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText(`${e.boss?'GUARDIAN · ':''}${t.name.toUpperCase()}`,e.x,e.y-r-18);ctx.textAlign='left'}
+      for(const a of w.particles){ctx.globalAlpha=Math.max(0,a.life*2);ctx.fillStyle=a.color;ctx.fillRect(a.x,a.y,3,3)}ctx.globalAlpha=1
+      ctx.fillStyle='rgba(4,7,16,.78)';ctx.fillRect(12,12,310,34);ctx.fillStyle='#e9e8ff';ctx.font='bold 13px system-ui';ctx.fillText(`${w.bossWave?'⚠ GUARDIAN RIFT':'RLM · ABYSSAL ARENA'}   WAVE ${w.wave}`,23,34)
       frame=requestAnimationFrame(loop)
     }
-    frame=requestAnimationFrame(loop)
-    return()=>{cancelAnimationFrame(frame);window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);canvas.removeEventListener('pointermove',pointer);canvas.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up)}
-  },[runId,onFinish])
-  const coins=Number(playerStats?.coins||0)
-  return <div className="panel arena-panel"><div className="lobby-row"><div><h3>👾 Arena survival</h3><p className="muted">Move, aim and survive monster waves. Your account coins buy permanent weapons.</p></div><div className="arena-hud"><strong>Wave {hud.wave}</strong><strong>Score {hud.score}</strong><strong>HP {hud.hp}</strong><strong>🪙 {coins}</strong></div></div>
-    <canvas ref={canvasRef} width="840" height="480" className="arena-canvas" tabIndex="0" aria-label="Arena shooter game area" />
+    frame=requestAnimationFrame(loop);return()=>{cancelAnimationFrame(frame);window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);canvas.removeEventListener('pointermove',pointer);canvas.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up)}
+  },[runId,onFinish,onStatsRefresh])
+  const coins=Number(playerStats?.coins||0),isOwned=item=>weapons.some(w=>w.code===item.code)?owned.includes(item.code):ownedPets.includes(item.code)
+  const xp=Number(playerStats?.xp||0),level=Math.min(100,Number(playerStats?.level||1)),levelStart=100*(level-1)*level/2,levelTarget=100*level*(level+1)/2
+  return <div className="panel arena-panel arena-abyss">
+    <div className="lobby-row"><div><span className="arena-kicker">RLM · SURVIVAL PROTOCOL</span><h3>☠ Abyssal Arena</h3><p className="muted">12 monster factions · escalating waves · guardian dungeons · elemental loadouts</p></div><div className="arena-hud"><strong>WAVE {hud.wave}</strong><strong>SCORE {hud.score}</strong><strong>HP {hud.hp}</strong><strong>🪙 {coins}</strong></div></div>
+    <div className="arena-level-strip"><strong>LEVEL {level} / 100</strong><span>{xp.toLocaleString()} total XP</span><div><i style={{width:`${level>=100?100:Math.min(100,((xp-levelStart)/(levelTarget-levelStart))*100)}%`}} /></div></div>
+    <canvas ref={canvasRef} width="840" height="480" className="arena-canvas arena-canvas-premium" tabIndex="0" aria-label="Abyssal Arena monster survival game" />
     <p className="muted">{notice}</p>
-    {hud.status==='ready'&&<button className="primary" onClick={()=>start()}>Start survival</button>}
-    {hud.status==='over'&&<div className="arena-shop"><h3>Run complete</h3><p>Score: {hud.score} · Monsters defeated: {hud.kills}</p><button className="primary" onClick={()=>start()}>Play again</button></div>}
-    {hud.status==='shop'&&<div className="arena-shop"><h3>Wave cleared — choose your weapon</h3><p className="muted">Equip something you own, or unlock a new weapon here.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.damage} damage · {Math.round(1000/item.rate)} shots/sec</span>{owned.includes(item.code)?<button className="primary" onClick={()=>continueWave(item.name)}>Equip & continue</button>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyAndEquip(item)}>{shopBusy?'Please wait…':coins<item.cost?`Need ${item.cost} coins`:`Buy for ${item.cost} coins & equip`}</button>}</div>)}</div>{shopMessage&&<p className="status">{shopMessage}</p>}</div>}
-    <div className="arena-shop"><h3>🛒 Permanent weapon shop</h3><p className="muted">Purchases use your real RLM account coins and stay unlocked for future runs.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.cost===0?'Free':`${item.cost} account coins`}</span>{owned.includes(item.code)?<span className="muted">✓ Owned</span>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyWeapon(item)}>{coins<item.cost?'Not enough coins':`Buy · ${item.cost}`}</button>}</div>)}</div>{shopMessage&&<p className="status">{shopMessage}</p>}</div>
+    {hud.status==='ready'&&<button className="primary" onClick={()=>start()}>Enter the rift</button>}
+    {hud.status==='over'&&<div className="arena-shop"><h3>Run complete</h3><p>Score: {hud.score} · Monsters defeated: {hud.kills} · Highest wave: {hud.wave}</p><button className="primary" onClick={()=>start()}>Retry dungeon</button></div>}
+    {hud.status==='shop'&&<div className="arena-shop"><h3>✦ Wave cleared — prepare your loadout</h3><div className="weapon-grid">{weapons.filter(x=>owned.includes(x.code)).map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>Element: {item.element}</span><button className="primary" onClick={()=>continueWave(item.name)}>Equip & continue</button></div>)}</div><button className="primary" onClick={()=>continueWave()}>Continue with {weapon}</button></div>}
+    <div className="arena-shop"><h3>⚔ Elemental Arsenal</h3><p className="muted">Match weapon elements to monster weaknesses for 2.5× damage. Read each monster's class label above its health bar.</p><div className="weapon-grid">{weapons.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>Element: {item.element} · Strong vs {item.strong.length?item.strong.join(', '):'—'}</span><span>{item.cost===0?'Free':`${item.cost} coins`}</span>{isOwned(item)?<span className="arena-owned">✓ OWNED</span>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyItem(item)}>{coins<item.cost?'Not enough coins':`Unlock · ${item.cost}`}</button>}</div>)}</div></div>
+    <div className="arena-shop"><h3>🐾 Companion roster</h3><div className="weapon-grid">{pets.map(item=><div className="weapon-card" key={item.code}><strong>{item.name}</strong><span>{item.desc}</span><span>{item.cost} coins</span>{ownedPets.includes(item.code)?<button className={activePet===item.code?'primary':'secondary'} onClick={()=>{setActivePet(activePet===item.code?'':item.code);if(worldRef.current)worldRef.current.pet=activePet===item.code?'':item.code}}>{activePet===item.code?'Equipped ✓':'Equip pet'}</button>:<button className="primary" disabled={shopBusy||coins<item.cost} onClick={()=>buyItem(item)}>{coins<item.cost?'Not enough coins':`Buy · ${item.cost}`}</button>}</div>)}</div></div>
+    <div className="arena-shop dungeon-quest"><h3>📜 Dungeon quests</h3><p className="muted">Progress saves during this run. Clear waves, defeat guardians and survive the abyss.</p><div className="quest-grid"><div><strong>Rift Cleaner</strong><span>{quest.kills} / 30 monsters defeated</span><i style={{width:`${Math.min(100,quest.kills/30*100)}%`}} /></div><div><strong>Guardian Hunter</strong><span>{quest.bosses} / 3 guardians defeated</span><i style={{width:`${Math.min(100,quest.bosses/3*100)}%`}} /></div><div><strong>Deep Delver</strong><span>{quest.clears} / 10 waves cleared</span><i style={{width:`${Math.min(100,quest.clears/10*100)}%`}} /></div></div><p className="muted">Quest rewards: complete a full run to claim XP and coins. A guardian appears every 5 waves.</p></div>
+    {shopMessage&&<p className="status">{shopMessage}</p>}
   </div>
 }
 
@@ -384,12 +436,8 @@ export default function ExtendedGames({ supabase, session, members = [], staffRo
   const blackRemaining = Math.max(0, Number(active?.black_time_ms || 0) - (Number(active?.move_count || 0) % 2 === 1 ? clockElapsed : 0))
   const formatClock = ms => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2,'0')}`
   const profileLabel = (id, rows) => rows.find(row => row.id === id)?.display_name || rows.find(row => row.id === id)?.username
-  const level = Math.min(100, Number(playerStats?.level || 1))
-  const totalXp = Number(playerStats?.xp || 0)
-  const currentLevelXp = 50 * (level - 1) * level
-  const nextLevelXp = 50 * level * (level + 1)
-  const levelProgress = level >= 100 ? 100 : Math.max(0, Math.min(100, ((totalXp-currentLevelXp)/(nextLevelXp-currentLevelXp))*100))
-  const perks = [{level:10,name:'Elite Member',detail:'Elite profile title'},{level:25,name:'Dungeon Veteran',detail:'Dungeon veteran title'},{level:50,name:'RLM Champion',detail:'Champion profile title'},{level:75,name:'Mythic Explorer',detail:'Mythic explorer title'},{level:100,name:'RLM Legend',detail:'Legendary profile title'}]
+  const level = Number(playerStats?.level || 1)
+  const perks = [{level:2,name:'Arcade Starter',detail:'Unlock the arena wave badge.'},{level:3,name:'Track Regular',detail:'Unlock the racer profile tag.'},{level:5,name:'RLM Veteran',detail:'Unlock the veteran profile title.'},{level:10,name:'Elite Member',detail:'Unlock the elite profile title.'}]
   return <div className="rlm-extra-games">
     <div className="level-progress panel"><h3>✦ Level {level} · {Number(playerStats?.xp || 0)} XP</h3><p className="muted">Earn XP by completing games. Level markers track upcoming profile-flair milestones; cosmetic grants are not automatic yet.</p><div className="unlocked-perks">{perks.map(p => <span key={p.level} className={level >= p.level ? 'perk unlocked' : 'perk'}>{level >= p.level ? '✓' : '🔒'} Level {p.level}: {p.name} — {p.detail}</span>)}</div></div>
     <div className="game-tabs extra-tabs">
