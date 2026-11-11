@@ -438,3 +438,74 @@ img {
 @media(max-width:600px){.scene-node{min-width:58px;padding:3px;font-size:9px}.scene-node small{font-size:8px}.node-tree-a{left:15%}.node-tree-b{left:54%}.node-ore-a{left:56%;top:67%}.node-fishing{left:76%;top:70%}.node-trader{left:3%;top:13%}.scene-trader-panel{bottom:6px}.scene-trader-panel .adventure-action-row{gap:4px}.scene-trader-panel button{font-size:10px}}
 
 .adventure-scene{position:relative}
+
+/* High-contrast Adventure UI: keep tool labels and the adventure banner readable */
+.adventure-world,
+.adventure-world .panel,
+.adventure-world .panel p,
+.adventure-world .panel small,
+.adventure-world .muted {
+  color: #f7f3ff !important;
+}
+.adventure-hero {
+  background: linear-gradient(120deg, #493078 0%, #263b55 55%, #1d3440 100%) !important;
+  border: 2px solid #b99aff !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 30px #0008, inset 0 1px 0 #ffffff30 !important;
+}
+.adventure-hero h2,
+.adventure-hero p,
+.adventure-hero .adventure-kicker,
+.adventure-hero strong,
+.adventure-hero span,
+.adventure-hero small {
+  color: #ffffff !important;
+  text-shadow: 0 1px 3px #111827;
+}
+.adventure-hero .adventure-kicker { color: #ffe28a !important; }
+.adventure-wallet {
+  background: #111827eF !important;
+  border-color: #d3b8ff !important;
+}
+.adventure-wallet strong { color: #ffe28a !important; }
+.adventure-wallet span { color: #ffffff !important; }
+.adventure-toolbar .primary,
+.adventure-toolbar .secondary {
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px #0008;
+}
+.tool-hotbar button,
+.tool-hotbar button:visited,
+.adventure-world .tool-hotbar button {
+  background: #26364b !important;
+  border: 1px solid #9bbce8 !important;
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  text-shadow: 0 1px 2px #000 !important;
+}
+.tool-hotbar button.selected,
+.adventure-world .tool-hotbar button.selected {
+  background: #72501b !important;
+  border: 2px solid #ffe08a !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 2px #ffe08a55, 0 3px 12px #0008 !important;
+}
+.adventure-systems-grid button,
+.adventure-action-row button,
+.tool-tier-list button,
+.crop-row button,
+.adventure-controls button {
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px #0009;
+}
+.adventure-systems-grid h3,
+.adventure-side .panel h3 { color: #ffe6a6 !important; }
+.resource-counts span,
+.tool-tier-list > div {
+  color: #ffffff !important;
+}
+.resource-counts b,
+.tool-tier-list b { color: #ffe08a !important; }
+.scene-node,
+.scene-node b,
+.scene-node small { color: #ffffff !important; }
