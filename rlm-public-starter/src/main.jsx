@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createClient } from '@supabase/supabase-js'
 import ExtendedGames from './ExtendedGames.jsx'
 import './style.css'
+import './presence.css'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -14,22 +15,26 @@ const menu = [
   ['Coin shop', '🛍'], ['My profile', '◉']
 ]
 
-function ChatAvatar({ person, className = 'chat-avatar' }) {
+function ChatAvatar({ person, className = 'chat-avatar', presenceStatus = 'offline' }) {
   const name = person?.display_name || person?.username || 'R'
 
   if (person?.avatar_url) {
     return (
-      <img
-        src={person.avatar_url}
-        alt=""
-        className={`${className} chat-avatar-image`}
-      />
+      <span className="presence-avatar-wrap">
+        <img
+          src={person.avatar_url}
+          alt=""
+          className={`${className} chat-avatar-image`}
+        />
+        <span className={`presence-dot ${presenceStatus}`} title={presenceStatus === 'online' ? 'Online' : presenceStatus === 'away' ? 'Away' : 'Offline'} />
+      </span>
     )
   }
 
   return (
-    <span className={className}>
-      {name.slice(0, 1).toUpperCase()}
+    <span className="presence-avatar-wrap">
+      <span className={className}>{name.slice(0, 1).toUpperCase()}</span>
+      <span className={`presence-dot ${presenceStatus}`} title={presenceStatus === 'online' ? 'Online' : presenceStatus === 'away' ? 'Away' : 'Offline'} />
     </span>
   )
 }
@@ -42,7 +47,7 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
     <span className={`member-name ${isOwner ? 'owner-name' : ''} ${className}`.trim()}>
       {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
       {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
-      <span>{person?.display_name || person?.username || 'RLM member'}</span>
+      <span>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
       {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
       {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
       {isStaff && !isOwner && (
@@ -86,7 +91,7 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
       {open && (
         <span className="profile-hover-card" role="status" style={{ top: cardPosition.top, left: cardPosition.left }}>
           <span className="profile-hover-heading">
-            <strong>{person?.display_name || person?.username || 'RLM member'}</strong>
+            <strong>{person?.display_name || person?.username || '尺ḼⱮ member'}</strong>
             {role && <small>{role.toUpperCase()}</small>}
           </span>
           {loading ? <span className="muted">Loading stats…</span> : failed ? <span className="muted">Profile stats unavailable. Run the progression SQL migration.</span> : stats ? (
@@ -253,6 +258,7 @@ function App() {
   const [clanMessageText, setClanMessageText] = React.useState('')
   const [loadingClanChat, setLoadingClanChat] = React.useState(false)
   const [sendingClanMessage, setSendingClanMessage] = React.useState(false)
+  const [presenceByUser, setPresenceByUser] = React.useState({})
 
   // Staff permissions and moderation
   const [staffRole, setStaffRole] = React.useState('member')
@@ -272,6 +278,92 @@ function App() {
   const [suspension, setSuspension] = React.useState(null)
 
   const isStaff = ['owner', 'admin', 'moderator'].includes(staffRole)
+
+  // Realtime presence shared by every signed-in clan member.
+  // Hidden tabs or inactive users are marked away; disconnecting removes them.
+  React.useEffect(() => {
+    if (!session?.user?.id || !supabase) {
+      setPresenceByUser({})
+      return
+    }
+
+    let channel
+    let disposed = false
+    let lastActivity = Date.now()
+    let currentStatus = 'online'
+
+    const publishPresence = async (status) => {
+      currentStatus = status
+      if (!channel || disposed) return
+      await channel.track({
+        user_id: session.user.id,
+        display_name: profile?.display_name || session.user.email || 'Clan member',
+        status,
+        last_seen: new Date().toISOString()
+      })
+    }
+
+    const refreshPresence = () => {
+      if (!channel || disposed) return
+      const state = channel.presenceState()
+      const next = {}
+      Object.values(state).flat().forEach((entry) => {
+        if (!entry?.user_id) return
+        const previous = next[entry.user_id]
+        const priority = value => value === 'online' ? 2 : value === 'away' ? 1 : 0
+        if (!previous || priority(entry.status) > priority(previous.status)) {
+          next[entry.user_id] = {
+            status: ['online', 'away'].includes(entry.status) ? entry.status : 'away',
+            display_name: entry.display_name || 'Clan member'
+          }
+        }
+      })
+      setPresenceByUser(next)
+    }
+
+    channel = supabase.channel('rlm-clan-presence', {
+      config: { presence: { key: session.user.id } }
+    })
+      .on('presence', { event: 'sync' }, refreshPresence)
+      .on('presence', { event: 'join' }, refreshPresence)
+      .on('presence', { event: 'leave' }, refreshPresence)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await publishPresence(document.visibilityState === 'hidden' ? 'away' : 'online')
+          refreshPresence()
+        }
+      })
+
+    const markActive = () => {
+      lastActivity = Date.now()
+      if (document.visibilityState !== 'hidden' && currentStatus !== 'online') publishPresence('online')
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') publishPresence('away')
+      else { lastActivity = Date.now(); publishPresence('online') }
+    }
+    const activityEvents = ['pointerdown', 'keydown', 'mousemove', 'touchstart']
+    activityEvents.forEach(event => window.addEventListener(event, markActive, { passive: true }))
+    document.addEventListener('visibilitychange', onVisibility)
+
+    const awayTimer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden' || Date.now() - lastActivity > 60000) {
+        if (currentStatus !== 'away') publishPresence('away')
+      }
+    }, 15000)
+
+    return () => {
+      disposed = true
+      window.clearInterval(awayTimer)
+      activityEvents.forEach(event => window.removeEventListener(event, markActive))
+      document.removeEventListener('visibilitychange', onVisibility)
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [session?.user?.id, profile?.display_name])
+
+  function presenceStatus(userId) {
+    return userId && presenceByUser[userId]?.status ? presenceByUser[userId].status : 'offline'
+  }
 
   React.useEffect(() => {
     try {
@@ -547,7 +639,7 @@ function App() {
   }
 
   React.useEffect(() => {
-    if (session && ['Leaderboard', 'Friends', 'Minigames'].includes(section)) {
+    if (session && ['Leaderboard', 'Friends', 'Minigames', 'Clan Chat'].includes(section)) {
       refreshDirectory()
     }
 
@@ -747,7 +839,7 @@ function App() {
         conversationId: member.conversation_id,
         friend: profileMap[member.user_id] || {
           id: member.user_id,
-          display_name: 'RLM member',
+          display_name: '尺ḼⱮ member',
           username: '',
           avatar_url: null
         }
@@ -1085,7 +1177,7 @@ function App() {
       setStatus(
         profileError
           ? 'Account created, but the display name could not be saved: ' + profileError.message
-          : 'Account created! Welcome to RLM.'
+          : 'Account created! Welcome to 尺ḼⱮ.'
       )
     } else {
       setStatus('Account created. If email confirmation is enabled in Supabase, you will still need to confirm your email.')
@@ -1229,7 +1321,7 @@ function App() {
     }
 
     setSelectedConversation(data)
-    setSelectedName(friend.display_name || friend.username || 'RLM member')
+    setSelectedName(friend.display_name || friend.username || '尺ḼⱮ member')
     setMessageText('')
 
     setConversations(previous => {
@@ -1286,7 +1378,7 @@ function App() {
   }
 
   function displayName(person) {
-    return person?.display_name || person?.username || 'RLM member'
+    return person?.display_name || person?.username || '尺ḼⱮ member'
   }
 
   function memberFriendControls(member) {
@@ -1346,7 +1438,7 @@ function App() {
       return (
         <div className="panel">
           <h2>Account restricted</h2>
-          <p>Your RLM account currently has an active {suspension.action_type}.</p>
+          <p>Your 尺ḼⱮ account currently has an active {suspension.action_type}.</p>
           <p>
             <strong>Reason:</strong>{' '}
             {suspension.reason || 'No reason provided'}
@@ -1360,7 +1452,7 @@ function App() {
           )}
 
           <p className="muted">
-            If you think this restriction was applied by mistake, contact RLM staff.
+            If you think this restriction was applied by mistake, contact 尺ḼⱮ staff.
           </p>
 
           <button className="secondary" onClick={signOut}>
@@ -1375,17 +1467,17 @@ function App() {
         <>
           <section className="hero">
             <div className="eyebrow">WELCOME TO THE CLAN</div>
-            <h1>RLM<br />SHELL SHOCKERS CLAN</h1>
+            <h1>尺ḼⱮ<br />SHELL SHOCKERS CLAN</h1>
             <p>
-              The home of the RLM Shell Shockers clan. Connect with clan members,
-              chat with friends, compete, and represent RLM.
+              The home of the 尺ḼⱮ Shell Shockers clan. Connect with clan members,
+              chat with friends, compete, and represent 尺ḼⱮ.
             </p>
           </section>
 
           {!session ? (
             <div className="panel auth">
               <h2>Create an account or sign in</h2>
-              <p className="muted">Join the RLM community.</p>
+              <p className="muted">Join the 尺ḼⱮ community.</p>
 
               <form onSubmit={signIn}>
                 <label>
@@ -1393,7 +1485,7 @@ function App() {
                   <input
                     type="text"
                     maxLength="24"
-                    placeholder="Your RLM name"
+                    placeholder="Your 尺ḼⱮ name"
                     value={signupDisplayName}
                     onChange={e => setSignupDisplayName(e.target.value)}
                   />
@@ -1439,7 +1531,7 @@ function App() {
               <h2>
                 Welcome back, {profile?.display_name || session.user.email}!
               </h2>
-              <p className="muted">Your RLM account is connected.</p>
+              <p className="muted">Your 尺ḼⱮ account is connected.</p>
               <button className="secondary" onClick={signOut}>Sign out</button>
               <p className="status">{status}</p>
             </div>
@@ -1448,7 +1540,7 @@ function App() {
           <div className="grid">
             <div className="panel">
               <h3>✉ Messages</h3>
-              <p className="muted">Chat with your RLM friends.</p>
+              <p className="muted">Chat with your 尺ḼⱮ friends.</p>
               <button
                 className="secondary"
                 onClick={() => setSection('Messages')}
@@ -1464,7 +1556,7 @@ function App() {
 
             <div className="panel">
               <h3>🏆 Progression</h3>
-              <p className="muted">Your RLM journey.</p>
+              <p className="muted">Your 尺ḼⱮ journey.</p>
             </div>
           </div>
         </>
@@ -1489,7 +1581,7 @@ function App() {
         <div className="chat-page">
           <div className="chat-heading">
             <div>
-              <h2>✉ RLM Messages</h2>
+              <h2>✉ 尺ḼⱮ Messages</h2>
               <p className="muted">Your private conversations</p>
             </div>
           </div>
@@ -1513,7 +1605,7 @@ function App() {
                       setSelectedName(displayName(conversation.friend))
                     }}
                   >
-                    <ChatAvatar person={conversation.friend} />
+                    <ChatAvatar person={conversation.friend} presenceStatus={presenceStatus(conversation.friend?.id)} />
                     <span className="chat-conversation-name">
                       <MemberName
                         person={conversation.friend}
@@ -1563,6 +1655,7 @@ function App() {
                             <ChatAvatar
                               person={senderProfile}
                               className="chat-message-avatar"
+                              presenceStatus={presenceStatus(senderProfile?.id)}
                             />
 
                             <div className="chat-message-content">
@@ -1632,7 +1725,7 @@ function App() {
       if (!session) {
         return (
           <div className="panel">
-            <h2>💬 RLM Clan Chat</h2>
+            <h2>💬 尺ḼⱮ Clan Chat</h2>
             <p>Please sign in to join the clan chat.</p>
           </div>
         )
@@ -1642,12 +1735,33 @@ function App() {
         <div className="chat-page">
           <div className="chat-heading">
             <div>
-              <h2>💬 RLM Clan Chat</h2>
-              <p className="muted">The shared chat for RLM members</p>
+              <h2>💬 尺ḼⱮ Clan Chat</h2>
+              <p className="muted">The shared chat for 尺ḼⱮ members</p>
             </div>
 
             <span className="chat-online-label">● Clan channel</span>
           </div>
+
+          <section className="clan-presence-panel" aria-label="Clan member presence">
+            <div className="clan-presence-heading">
+              <strong>Members online</strong>
+              <span>{Object.values(presenceByUser).filter(item => item.status === 'online').length} online</span>
+            </div>
+            <div className="clan-presence-list">
+              {[...members, ...(session?.user?.id ? [{ id: session.user.id, display_name: profile?.display_name || session.user.email }] : [])]
+                .sort((a, b) => (a.display_name || a.username || '').localeCompare(b.display_name || b.username || ''))
+                .map(person => {
+                  const state = presenceStatus(person.id)
+                  return (
+                    <span className="clan-presence-member" key={person.id}>
+                      <span className={`presence-dot ${state}`} />
+                      {person.display_name || person.username || 'Clan member'}
+                      <small>{state === 'online' ? 'Online' : state === 'away' ? 'Away' : 'Offline'}</small>
+                    </span>
+                  )
+                })}
+            </div>
+          </section>
 
           <section className="chat-main clan-chat-main">
             <div className="chat-topbar">
@@ -1663,13 +1777,13 @@ function App() {
                 <p className="muted chat-placeholder">Loading clan chat...</p>
               ) : clanMessages.length === 0 ? (
                 <div className="chat-placeholder">
-                  <strong>Welcome to the RLM clan chat!</strong>
+                  <strong>Welcome to the 尺ḼⱮ clan chat!</strong>
                   <span>Be the first to send a message.</span>
                 </div>
               ) : (
                 clanMessages.map(message => (
                   <div key={message.id} className="clan-message-row">
-                    <ChatAvatar person={message.sender} />
+                    <ChatAvatar person={message.sender} presenceStatus={presenceStatus(message.sender?.id)} />
 
                     <div className="clan-message-content">
                       <div className="chat-message-meta">
@@ -1696,7 +1810,7 @@ function App() {
 
             <form className="chat-composer" onSubmit={sendClanMessage}>
               <input
-                aria-label="Message the RLM clan"
+                aria-label="Message the 尺ḼⱮ clan"
                 maxLength="1000"
                 placeholder="Message #general..."
                 value={clanMessageText}
@@ -1826,7 +1940,7 @@ function App() {
       if (!session) {
         return (
           <div className="panel">
-            <h2>🏆 RLM Members</h2>
+            <h2>🏆 尺ḼⱮ Members</h2>
             <p>
               Please sign in to view the member directory and connect with other members.
             </p>
@@ -1840,19 +1954,19 @@ function App() {
 
       return (
         <div className="panel">
-          <h2>🏆 RLM Members</h2>
+          <h2>🏆 尺ḼⱮ Members</h2>
           <p className="muted">
             Find clan members, send friend requests, and start private chats after a request is accepted.
           </p>
 
           <div className="panel xp-leaderboard-panel">
-            <div className="xp-leaderboard-heading"><div><span className="arena-kicker">RLM GLOBAL RANKINGS</span><h3>🏆 XP Leaderboard</h3><p className="muted">Players are ranked by level first, then total XP.</p></div><span className="xp-cap">LEVEL CAP · 100</span></div>
+            <div className="xp-leaderboard-heading"><div><span className="arena-kicker">尺ḼⱮ GLOBAL RANKINGS</span><h3>🏆 XP Leaderboard</h3><p className="muted">Players are ranked by level first, then total XP.</p></div><span className="xp-cap">LEVEL CAP · 100</span></div>
             {xpLeaderboardLoading ? <p className="muted">Loading rankings…</p> : xpLeaderboard.length === 0 ? <p className="muted">No rankings yet. Play a game to earn the first XP.</p> : <div className="xp-leaderboard-list">{xpLeaderboard.map(row => {
               const isYou = row.user_id === session.user.id
               return <div key={row.user_id} className={`xp-leaderboard-row ${isYou ? 'is-you' : ''}`}>
                 <strong className="xp-rank">#{row.rank}</strong>
                 {row.avatar_url ? <img className="xp-avatar" src={row.avatar_url} alt="" /> : <span className="xp-avatar xp-avatar-fallback">{(row.display_name || row.username || '?').slice(0,1).toUpperCase()}</span>}
-                <div className="xp-member"><strong>{row.display_name || row.username || 'RLM member'} {isYou && <span className="you-tag">YOU</span>}</strong><small>@{row.username || 'member'}</small></div>
+                <div className="xp-member"><strong>{row.display_name || row.username || '尺ḼⱮ member'} {isYou && <span className="you-tag">YOU</span>}</strong><small>@{row.username || 'member'}</small></div>
                 <div className="xp-member-score"><strong>LEVEL {row.level}</strong><small>{Number(row.xp || 0).toLocaleString()} XP</small></div>
               </div>
             })}</div>}
@@ -1926,7 +2040,7 @@ function App() {
           </div>
 
           {loadingMembers ? (
-            <p className="muted">Loading RLM members...</p>
+            <p className="muted">Loading 尺ḼⱮ members...</p>
           ) : members.length === 0 ? (
             <p className="muted">No other members found yet.</p>
           ) : (
@@ -2002,7 +2116,7 @@ function App() {
         <div className="panel">
           <h2>🛡 Staff Control Panel</h2>
           <p className="muted">
-            Manage RLM member restrictions and review active moderation actions.
+            Manage 尺ḼⱮ member restrictions and review active moderation actions.
           </p>
 
           <div className="panel">
@@ -2047,7 +2161,7 @@ function App() {
                   {(staffRole === 'owner' ? ownerDirectory : staffMembers)
                     .map(member => {
                       const memberId = member.user_id || member.id
-                      return <option key={memberId} value={memberId}>{member.display_name || member.username || 'RLM member'}</option>
+                      return <option key={memberId} value={memberId}>{member.display_name || member.username || '尺ḼⱮ member'}</option>
                     })}
                 </select>
               </label>
@@ -2084,7 +2198,7 @@ function App() {
                     .filter(member => member.id !== session.user.id)
                     .map(member => (
                       <option key={member.id} value={member.id}>
-                        {member.display_name || member.username || 'RLM member'}
+                        {member.display_name || member.username || '尺ḼⱮ member'}
                         {member.username ? ` (@${member.username})` : ''}
                         {member.role ? ` — ${member.role}` : ''}
                       </option>
@@ -2227,7 +2341,7 @@ function App() {
 
                   <p>
                     <strong>Applied by:</strong>{' '}
-                    {action.moderator_display_name || action.moderator_username || 'RLM staff'}
+                    {action.moderator_display_name || action.moderator_username || '尺ḼⱮ staff'}
                   </p>
 
                   <p>
@@ -2281,7 +2395,7 @@ function App() {
       return (
         <div className="panel">
           <h2>🛍 Coin shop</h2>
-          <p className="muted">Buy name tags and badges with coins earned in RLM games and quests.</p>
+          <p className="muted">Buy name tags and badges with coins earned in 尺ḼⱮ games and quests.</p>
           <div className="progress-summary"><strong>🪙 {progressData?.stats?.coins ?? 100} coins</strong></div>
           <div className="shop-grid">
             {(progressData?.shop || []).map(item => (
@@ -2324,7 +2438,7 @@ function App() {
                 <div>
                   <strong>Profile picture</strong>
                   <p className="muted">
-                    Choose an image to use as your RLM avatar (max 3 MB).
+                    Choose an image to use as your 尺ḼⱮ avatar (max 3 MB).
                   </p>
 
                   <input
@@ -2356,7 +2470,7 @@ function App() {
                   cosmetics={memberCosmetics[session.user.id]}
                 />
               </p>
-              <p><strong>RLM role:</strong> {staffRole}</p>
+              <p><strong>尺ḼⱮ role:</strong> {staffRole}</p>
 
               <label>
                 Change your display name
@@ -2629,7 +2743,7 @@ function App() {
       `}</style>
 
       <aside className="sidebar">
-        <div className="brand">RLM<span>.</span></div>
+        <div className="brand">尺ḼⱮ<span>.</span></div>
 
         <div className="caption">MAIN MENU</div>
 
@@ -2680,6 +2794,7 @@ function App() {
               <ChatAvatar
                 person={conversation.friend}
                 className="sidebar-chat-avatar"
+                presenceStatus={presenceStatus(conversation.friend?.id)}
               />
 
               <span>
@@ -2738,7 +2853,7 @@ function App() {
       <main>
         <header>
           <strong>{section}</strong>
-          <span className="online">● RLM</span>
+          <span className="online">● 尺ḼⱮ</span>
 
           <button
             className="theme-toggle"
@@ -2758,7 +2873,7 @@ function App() {
           {Page()}
 
           <div className="notice">
-            <strong>RLM:</strong> New features are being built.
+            <strong>尺ḼⱮ:</strong> New features are being built.
             Private messaging is available between accepted friends.
             Clan Chat is shared with all signed-in members.
           </div>
