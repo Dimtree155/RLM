@@ -275,6 +275,9 @@ function App() {
   const [coinGrantTarget, setCoinGrantTarget] = React.useState('')
   const [coinGrantAmount, setCoinGrantAmount] = React.useState('100')
   const [coinGrantReason, setCoinGrantReason] = React.useState('')
+  const [deleteTarget, setDeleteTarget] = React.useState('')
+  const [deleteConfirm, setDeleteConfirm] = React.useState('')
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [suspension, setSuspension] = React.useState(null)
 
   const isStaff = ['owner', 'admin', 'moderator'].includes(staffRole)
@@ -1062,6 +1065,46 @@ function App() {
     else {
       setStatus(`Granted ${amount} coins.`)
       setCoinGrantReason('')
+    }
+  }
+
+  async function deleteMemberAccount() {
+    if (!session || !supabase || staffRole !== 'owner' || !deleteTarget) return
+    const target = ownerDirectory.find(member => (member.user_id || member.id) === deleteTarget)
+    if (!target || target.role === 'owner' || deleteTarget === session.user.id) {
+      setStatus('That account cannot be selected for deletion.')
+      return
+    }
+    if (deleteConfirm !== 'DELETE') {
+      setStatus('Type DELETE exactly to confirm this action.')
+      return
+    }
+
+    setStaffBusy(true)
+    setStatus('Requesting account deletion from the secure server function...')
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getSession()
+      if (authError || !authData?.session?.access_token) {
+        throw new Error(authError?.message || 'Your session has expired. Sign in again.')
+      }
+      const { data, error } = await supabase.functions.invoke('owner-delete-user', {
+        body: { user_id: deleteTarget },
+        headers: { Authorization: `Bearer ${authData.session.access_token}` }
+      })
+      if (error) throw new Error(error.message || 'The account deletion function returned an error.')
+      if (data?.error) throw new Error(data.error)
+
+      setOwnerDirectory(current => current.filter(member => (member.user_id || member.id) !== deleteTarget))
+      setStaffMembers(current => current.filter(member => (member.user_id || member.id) !== deleteTarget))
+      setDeleteTarget('')
+      setDeleteConfirm('')
+      setShowDeleteConfirm(false)
+      setStatus('The deletion function completed successfully. The selected member has been removed from the staff directory.')
+      await refreshStaffData()
+    } catch (error) {
+      setStatus(`Account deletion failed: ${error?.message || 'Unknown error'}. Check that the owner-delete-user Edge Function is deployed and its server-side role checks are configured.`)
+    } finally {
+      setStaffBusy(false)
     }
   }
 
@@ -2147,6 +2190,42 @@ function App() {
                   <p className="muted">Only the owner can grant titles or change staff roles.</p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {staffRole === 'owner' && (
+            <div className="panel owner-tools-panel">
+              <h3>🛡 Delete a member account</h3>
+              <p className="muted">Permanently delete a selected non-owner account. Your own account and other owner accounts are excluded. The Edge Function must verify the owner role again on the server.</p>
+              <label>
+                Member to delete
+                <select value={deleteTarget} onChange={e => { setDeleteTarget(e.target.value); setDeleteConfirm(''); setShowDeleteConfirm(false) }}>
+                  <option value="">Choose a member…</option>
+                  {ownerDirectory
+                    .filter(member => (member.user_id || member.id) !== session.user.id && member.role !== 'owner')
+                    .map(member => {
+                      const memberId = member.user_id || member.id
+                      return <option key={memberId} value={memberId}>{member.display_name || member.username || memberId} — {member.role || 'member'}</option>
+                    })}
+                </select>
+              </label>
+              <label>
+                Type DELETE to confirm
+                <input value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)} autoComplete="off" />
+              </label>
+              <button className="primary danger-button" disabled={!deleteTarget || deleteConfirm !== 'DELETE' || staffBusy} onClick={() => setShowDeleteConfirm(true)}>
+                Review account deletion
+              </button>
+              {showDeleteConfirm && (
+                <div className="notice">
+                  <strong>Final confirmation</strong>
+                  <p>This permanently removes the selected member’s account and authentication identity. This cannot be undone.</p>
+                  <button className="danger-button" disabled={staffBusy} onClick={deleteMemberAccount}>
+                    {staffBusy ? 'Deleting account…' : 'Permanently delete account'}
+                  </button>
+                  <button className="secondary" disabled={staffBusy} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+                </div>
+              )}
             </div>
           )}
 
