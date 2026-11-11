@@ -113,7 +113,7 @@ const ADVENTURE_MAPS = {
   ember:['🪨','🌋','🪨','🪨','🔥','🪨','🌋','🪨','🪨','🪨','🔥','🪨','🪨','🪨','🪨','🌋','🪨','🪨','🪨','🪨','🪨','🔥','🪨','🪨','🌋','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🔥','🪨','🪨','🪨','🪨','🌋','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨','🪨'],
   sky:['☁️','🌳','☁️','✨','☁️','🌳','☁️','☁️','🌳','☁️','☁️','☁️','🌳','☁️','☁️','✨','☁️','☁️','☁️','🌳','☁️','☁️','☁️','☁️','☁️','🌳','☁️','☁️','☁️','☁️','☁️','☁️','☁️','🌳','☁️','☁️','✨','☁️','☁️','☁️','☁️','☁️','☁️','🌳','☁️','☁️','☁️','☁️','☁️','☁️','☁️','☁️','🌳','☁️','☁️','☁️','☁️','☁️','☁️','☁️','☁️','☁️','☁️','☁️']
 };
-const freshAdventureSave = () => ({ region:'crimson', x:3, y:3, discovered:['crimson'], completedQuests:[], inventory:[], discoveries:[], dungeon:{entered:false, switches:[], key:false, guardian:false}, coins:0, xp:0, sideQuestProgress:{}, health:100, hunger:100, resources:{wood:0,stone:0,fiber:0,iron:0,amethyst:0,diamond:0,titanium:0,iridium:0,infinity:0,fish:0}, tools:{pickaxe:0,axe:0,sword:0,hoe:0,bow:0,rod:0}, seeds:{turnip:0,carrot:0,moonflower:0}, crops:[], buildings:[], pets:[], pigs:0, caveLevel:0, equippedTool:'axe', worldNodes:{} });
+const freshAdventureSave = () => ({ region:'crimson', x:3, y:3, discovered:['crimson'], completedQuests:[], inventory:[], discoveries:[], dungeon:{entered:false, switches:[], key:false, guardian:false}, coins:0, xp:0, sideQuestProgress:{}, health:100, hunger:100, resources:{wood:0,stone:0,fiber:0,iron:0,amethyst:0,diamond:0,titanium:0,iridium:0,infinity:0,fish:0}, tools:{pickaxe:0,axe:0,sword:0,hoe:0,bow:0,rod:0}, seeds:{turnip:0,carrot:0,moonflower:0}, crops:[], buildings:[], pets:[], pigs:0, caveLevel:0, equippedTool:'axe', durability:{axe:100,pickaxe:100,rod:100,hoe:100,sword:100,bow:100}, worldNodes:{} });
 
 
 function PixelAdventureScene({ region, save, onMoveTo, onSceneAction, sceneAction, traderOpen, onOpenTrader }) {
@@ -175,10 +175,10 @@ function PixelAdventureScene({ region, save, onMoveTo, onSceneAction, sceneActio
       <div className={`adventure-walker player-walker ${sceneAction?.kind ? `doing-${sceneAction.kind}` : ''}`} style={{left:`${((100+save.x*105)/960)*100}%`,top:`${((125+save.y*54)/600)*100}%`}}><i className="walker-shadow"/><i className="walker-hair"/><i className="walker-head"/><i className="walker-body"/><i className="walker-pack"/><i className="walker-arm"/><i className={`held-tool tool-${sceneAction?.tool || save.equippedTool || 'axe'}`}/><i className="walker-leg leg-one"/><i className="walker-leg leg-two"/></div>
     </div>
     <div className="scene-interact-layer">
-      {!save.worldNodes?.[`${region.id}:treeA`]&&<button className="scene-node scene-tree node-tree-a" onClick={()=>onSceneAction('chop','treeA')} aria-label="Chop tree"><i/><b>🌳 Tree</b><small>Chop · E</small></button>}
+      {!save.worldNodes?.[`${region.id}:treeA`]&&<button className="scene-node scene-tree node-tree-a" onClick={()=>onSceneAction('chop','treeA')} aria-label="Chop tree"><i/><b>🌳 Tree</b><small>Nearby · E</small></button>}
       {!save.worldNodes?.[`${region.id}:treeB`]&&<button className="scene-node scene-tree node-tree-b" onClick={()=>onSceneAction('chop','treeB')} aria-label="Chop another tree"><i/><b>🌲 Tree</b><small>Chop</small></button>}
-      {!save.worldNodes?.[`${region.id}:oreA`]&&<button className="scene-node scene-ore node-ore-a" onClick={()=>onSceneAction('mine','oreA')} aria-label="Mine ore"><i/><b>⛏ Ore vein</b><small>Mine</small></button>}
-      <button className="scene-node scene-water node-fishing" onClick={()=>onSceneAction('fish','water')} aria-label="Fish at pond"><i/><b>🎣 Fishing spot</b><small>Cast line</small></button>
+      {!save.worldNodes?.[`${region.id}:oreA`]&&<button className="scene-node scene-ore node-ore-a" onClick={()=>onSceneAction('mine','oreA')} aria-label="Mine ore"><i/><b>⛏ Ore vein</b><small>Nearby · E</small></button>}
+      <button className="scene-node scene-water node-fishing" onClick={()=>onSceneAction('fish','water')} aria-label="Fish at pond"><i/><b>🎣 Fishing spot</b><small>Nearby · E</small></button>
       <button className="scene-node scene-trader node-trader" onClick={onOpenTrader} aria-label="Talk to village trader"><i>🧑‍🌾</i><b>Trader</b><small>Trade</small></button>
     </div>
   </div>;
@@ -196,6 +196,11 @@ function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
   const [mapOpen,setMapOpen] = React.useState(false);
   const [sceneAction,setSceneAction] = React.useState(null);
   const [traderOpen,setTraderOpen] = React.useState(false);
+  const [bagOpen,setBagOpen] = React.useState(false);
+  const [groundDrops,setGroundDrops] = React.useState([]);
+  const [clock,setClock] = React.useState(8);
+  const [weather,setWeather] = React.useState('Sunny');
+  const [season,setSeason] = React.useState('Spring');
   const isOwner = staffRole === 'owner';
   const region = ADVENTURE_REGIONS.find(r=>r.id===save.region) || ADVENTURE_REGIONS[0];
   const completed = (id) => save.completedQuests.includes(id);
@@ -281,30 +286,25 @@ function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
   function performSceneAction(kind,node){
     if(sceneAction)return;
     const tool=kind==='chop'?'axe':kind==='mine'?'pickaxe':kind==='fish'?'rod':(save.equippedTool||'axe');
-    if(kind==='chop'&&(save.worldNodes?.[`${save.region}:${node}`])){setMessage('That tree has already been chopped in this world.');return;}
-    if(kind==='mine'&&(save.worldNodes?.[`${save.region}:${node}`])){setMessage('That ore vein has already been mined.');return;}
-    if(kind==='chop'&&(save.tools.axe||0)<0){setMessage('Equip an axe to chop trees.');return;}
-    if(kind==='mine'&&(save.tools.pickaxe||0)<0){setMessage('Equip a pickaxe to mine.');return;}
+    const durability=save.durability||{axe:100,pickaxe:100,rod:100,hoe:100,sword:100,bow:100};
+    if((durability[tool]??100)<=0){setMessage(`Your ${tool} is broken. Craft or upgrade another one.`);return;}
+    if(kind==='chop'&&save.worldNodes?.[`${save.region}:${node}`])return;
+    if(kind==='mine'&&save.worldNodes?.[`${save.region}:${node}`])return;
     const spots={treeA:[2,4],treeB:[6,3],oreA:[5,7],water:[7,7]};
-    if(spots[node])setSave(v=>({...v,x:spots[node][0],y:spots[node][1]}));
     setSceneAction({kind,tool,node});
-    setMessage(kind==='chop'?'You step up to the tree and swing your axe…':kind==='mine'?'You raise your pickaxe and strike the ore vein…':'You walk to the water and cast your fishing line…');
+    const tier=save.tools[tool]||0, speed=Math.max(420,950-tier*75);
+    setMessage(kind==='chop'?'Chopping nearby tree…':kind==='mine'?'Mining nearby rock…':'Fishing at the water…');
     window.setTimeout(()=>{
-      if(kind==='chop'){
-        const amount=3+(save.tools.axe||0);
-        setSave(v=>({...v,resources:{...v.resources,wood:(v.resources.wood||0)+amount},xp:v.xp+4,worldNodes:{...(v.worldNodes||{}),[`${save.region}:${node}`]:true}}));
-        setMessage(`Chop! The tree falls and drops ${amount} wood. The axe was visibly swung in the world.`);
-      }else if(kind==='mine'){
-        const amount=2+Math.floor((save.tools.pickaxe||0)/2);
-        setSave(v=>({...v,resources:{...v.resources,stone:(v.resources.stone||0)+amount},xp:v.xp+4,worldNodes:{...(v.worldNodes||{}),[`${save.region}:${node}`]:true}}));
-        setMessage(`Clink! You mined ${amount} stone from the visible ore vein.`);
-      }else if(kind==='fish'){
-        setSave(v=>({...v,resources:{...v.resources,fish:(v.resources.fish||0)+1},xp:v.xp+3}));
-        setMessage('A fish bites! You reel in 1 fish.');
-      }
-      setSceneAction(null);
-    },kind==='fish'?1450:850);
+      const amount=kind==='chop'?3+tier:kind==='mine'?2+Math.floor(tier/2):1;
+      const resource=kind==='chop'?'wood':kind==='mine'?'stone':'fish';
+      const drop={id:Date.now()+Math.random(),resource,amount,x:save.x,y:save.y};
+      setGroundDrops(v=>[...v,drop]);
+      setSave(v=>({...v,x:spots[node]?.[0]??v.x,y:spots[node]?.[1]??v.y,xp:v.xp+(kind==='fish'?3:4),durability:{...(v.durability||{axe:100,pickaxe:100,rod:100,hoe:100,sword:100,bow:100}),[tool]:Math.max(0,(v.durability?.[tool]??100)-(kind==='fish'?2:5-tier))},worldNodes:kind==='fish'?v.worldNodes:{...(v.worldNodes||{}),[`${save.region}:${node}`]:true}}));
+      setMessage(`${amount} ${resource} dropped nearby. Walk over and press E to pick it up.`);setSceneAction(null);
+    },speed);
   }
+  function pickupDrop(){if(!groundDrops.length)return;const drop=groundDrops[0];setGroundDrops(v=>v.filter(d=>d.id!==drop.id));setSave(v=>({...v,resources:{...v.resources,[drop.resource]:(v.resources[drop.resource]||0)+drop.amount}}));setMessage(`Picked up ${drop.amount} ${drop.resource}.`);}
+  function interactNearby(){if(groundDrops.length){pickupDrop();return;}const options=[['chop','treeA',2,4],['chop','treeB',6,3],['mine','oreA',5,7],['fish','water',7,7]];const near=options.find(([, ,x,y])=>Math.abs(save.x-x)+Math.abs(save.y-y)<=1);if(near){performSceneAction(near[0],near[1]);return;}setMessage('Move closer to a tree, rock, fishing spot or dropped resource, then press E.');}
   function tradeFromScene(){setSave(v=>({...v,x:1,y:2}));setTraderOpen(true);setMessage('You walked over to the village trader. Choose a trade below.');}
   function sellWood(){if((save.resources.wood||0)<5){setMessage('You need at least 5 wood to trade.');return;}update({resources:{...save.resources,wood:save.resources.wood-5},coins:save.coins+12});setMessage('Traded 5 wood for 12 adventure coins.');}
   function sellStone(){if((save.resources.stone||0)<5){setMessage('You need at least 5 stone to trade.');return;}update({resources:{...save.resources,stone:save.resources.stone-5},coins:save.coins+15});setMessage('Traded 5 stone for 15 adventure coins.');}
@@ -339,8 +339,8 @@ function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
   function buyPet(){if(!spend(75))return;update({coins:save.coins-75,pets:[...save.pets,`Pip ${save.pets.length+1}`]});setMessage('A little companion joined your homestead!');}
   function buyPig(){if(!spend(90))return;update({coins:save.coins-90,pigs:save.pigs+1});setMessage('A pig joined your farm.');}
   function breedPigs(){if(save.pigs<2){setMessage('You need at least two pigs to breed.');return;}update({pigs:save.pigs+1});setMessage('A piglet was born on your farm!');}
-  React.useEffect(()=>{const down=e=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();const d={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]}[k];move(...d);}};window.addEventListener('keydown',down);return()=>window.removeEventListener('keydown',down);});
-  React.useEffect(()=>{if(loading)return;const timer=setInterval(()=>setSave(v=>({...v,hunger:Math.max(0,(v.hunger??100)-1),health:(v.hunger??100)<=0?Math.max(1,(v.health??100)-1):v.health})),45000);return()=>clearInterval(timer);},[loading]);
+  React.useEffect(()=>{const down=e=>{const k=e.key.toLowerCase();if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if(k==='e'){e.preventDefault();interactNearby();return;}if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){e.preventDefault();const d={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]}[k];move(...d);}};window.addEventListener('keydown',down);return()=>window.removeEventListener('keydown',down);});
+  React.useEffect(()=>{if(loading)return;const timer=setInterval(()=>{setSave(v=>({...v,hunger:Math.max(0,(v.hunger??100)-1),health:(v.hunger??100)<=0?Math.max(1,(v.health??100)-1):v.health}));setClock(h=>{const n=(h+1)%24;if(n===0)setSeason(s=>({Spring:'Summer',Summer:'Autumn',Autumn:'Winter',Winter:'Spring'}[s]));return n;});if(Math.random()<.12)setWeather(w=>w==='Sunny'?'Rainy':w==='Rainy'?'Cloudy':'Sunny');},45000);return()=>clearInterval(timer);},[loading]);
   return <div className="adventure-world">
     <section className={`adventure-hero biome-${region.tone}`}>
       <div><span className="adventure-kicker">RLM ADVENTURE · THE FIVE REALMS</span><h2>{region.icon} {region.name}</h2><p>{region.biome} · Meet characters, uncover secrets and explore ancient dungeons.</p></div>
@@ -350,7 +350,7 @@ function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
     {mapOpen&&<div className="adventure-map panel"><h3>World map · Five Realms</h3><div className="realm-map-grid">{ADVENTURE_REGIONS.map(r=><button key={r.id} disabled={!isUnlocked(r.id)} className={`realm-map-card biome-${r.tone} ${save.region===r.id?'selected':''}`} onClick={()=>travel(r.id)}><strong>{isUnlocked(r.id)?r.icon:'🔒'} {isUnlocked(r.id)?r.name:'Undiscovered region'}</strong><small>{isUnlocked(r.id)?r.biome:'Complete the previous region quest'}</small></button>)}</div></div>}
     <section className="adventure-survival panel"><h3>❤️ Survival status</h3><div className="survival-bars"><div><label>Health · {save.health}/100</label><div className="survival-track"><i className="health-fill" style={{width:`${save.health}%`}}/></div></div><div><label>Hunger · {save.hunger}/100</label><div className="survival-track"><i className="hunger-fill" style={{width:`${save.hunger}%`}}/></div></div></div><p className="muted">Hunger slowly decreases while exploring. Eat food to keep your energy up.</p></section>
     <section className="adventure-systems-grid">
-      <div className="panel"><h3>🪓 In-world tools & resources</h3><p className="muted">Select what your character holds. Then click a tree, ore vein, fishing spot or trader inside the world scene below. Actions animate before resources are added.</p><div className="tool-hotbar">{['axe','pickaxe','rod','hoe','sword','bow'].map(t=><button className={(save.equippedTool||'axe')===t?'selected':''} key={t} onClick={()=>update({equippedTool:t})}>{t==='axe'?'🪓':t==='pickaxe'?'⛏️':t==='rod'?'🎣':t==='hoe'?'🪴':t==='sword'?'⚔️':'🏹'} {t}</button>)}</div><div className="resource-counts">{Object.entries(save.resources).map(([k,v])=><span key={k}>{k}: <b>{v}</b></span>)}</div><small>Held now: {save.equippedTool||'axe'} · Upgrade tiers improve gathering yield.</small></div>
+
       <div className="panel"><h3>⚒ Tool workshop</h3><p className="muted">Eight tiers: Wooden → Stone → Iron → Amethyst → Diamond → Titanium → Iridium → Infinity.</p><div className="tool-tier-list">{Object.entries(toolNames).map(([k,n])=><div key={k}><span>{n}</span><b>{tiers[save.tools[k]||0]}</b><button disabled={(save.tools[k]||0)>=7} onClick={()=>buyTool(k)}>Upgrade · {prices[(save.tools[k]||0)+1]||'MAX'} coins</button></div>)}</div></div>
       <div className="panel"><h3>🌱 Farming & seeds</h3><div className="adventure-action-row">{['turnip','carrot','moonflower'].map(seed=><span key={seed}>{seed} seeds: {save.seeds[seed]} <button onClick={()=>buySeeds(seed)}>Buy seeds · 12</button> <button onClick={()=>plant(seed)}>Plant</button></span>)}</div><p className="muted">Growing crops:</p>{save.crops.length?save.crops.map(c=><div className="crop-row" key={c.id}><span>{c.seed} · {Math.max(0,Math.ceil((60000-(Date.now()-c.plantedAt))/1000))}s left</span><button onClick={()=>harvest(c)}>Harvest</button></div>):<small>No crops planted yet.</small>}</div>
       <div className="panel"><h3>⛏ Mountain caves</h3><p className="muted">Explore deeper cave layers for rarer ores. Your pickaxe tier determines how far you can go.</p><p>Depth reached: {save.caveLevel} · Cave creatures spotted: {Math.min(save.caveLevel,5)}</p><button onClick={exploreCave}>Explore cave · -18 health</button></div>
@@ -361,6 +361,11 @@ function AdventureWorld({ supabase, session, staffRole='member', members=[] }) {
     <div className="adventure-layout">
       <div className={`adventure-scene biome-${region.tone}`}>
         <div className="adventure-scene-top"><span>{region.icon} {region.name}</span><small>Move with the arrows · Discover hidden places</small></div>
+        <div className="adventure-hud"><span>🕒 {String(clock).padStart(2,'0')}:00</span><span>🌦 {weather}</span><span>🍂 {season}</span><button onClick={()=>setBagOpen(v=>!v)}>🎒 Bag</button></div>
+        <div className="tool-hotbar minecraft-hotbar">{['axe','pickaxe','rod','hoe','sword','bow'].map(t=><button title={t} className={(save.equippedTool||'axe')===t?'selected':''} key={t} onClick={()=>update({equippedTool:t})}>{t==='axe'?'🪓':t==='pickaxe'?'⛏️':t==='rod'?'🎣':t==='hoe'?'🪴':t==='sword'?'⚔️':'🏹'}</button>)}</div>
+        <div className="adventure-prompt">Press <b>E</b> near a resource to interact · WASD / arrows to move</div>
+        {groundDrops.map(d=><button key={d.id} style={{position:'absolute',left:`${12+d.x*9}%`,top:`${18+d.y*7}%`}} className="ground-drop" onClick={pickupDrop}>✨ {d.amount} {d.resource} · E</button>)}
+        {bagOpen&&<div className="adventure-bag"><button className="bag-close" onClick={()=>setBagOpen(false)}>✕</button><h3>🎒 Inventory & durability</h3><div className="resource-counts">{Object.entries(save.resources).map(([k,v])=><span key={k}>{k}: <b>{v}</b></span>)}</div><h4>Tools</h4>{['axe','pickaxe','rod','hoe','sword','bow'].map(t=><div className="durability-row" key={t}><span>{t}</span><div><i style={{width:`${(save.durability?.[t]??100)}%`}}/></div><b>{save.durability?.[t]??100}%</b><button onClick={()=>update({equippedTool:t})}>Equip</button></div>)}<h4>Seeds</h4>{Object.entries(save.seeds).map(([k,v])=><button key={k} onClick={()=>update({selectedSeed:k})}>{k} · {v} seeds</button>)}</div>}
         <PixelAdventureScene region={region} save={save} sceneAction={sceneAction} traderOpen={traderOpen} onSceneAction={performSceneAction} onOpenTrader={tradeFromScene} onMoveTo={(x,y)=>{const key=`${save.region}:${x}:${y}`;update({x,y,discoveries:save.discoveries.includes(key)?save.discoveries:[...save.discoveries,key]});setMessage(`You explored ${region.name} · ${x+1}, ${y+1}.`)}} />
         {sceneAction&&<div className="scene-action-toast">{sceneAction.kind==='chop'?'🪓 Chopping…':sceneAction.kind==='mine'?'⛏ Mining…':'🎣 Fishing…'}</div>}
         {traderOpen&&<div className="scene-trader-panel"><button className="scene-trader-close" onClick={()=>setTraderOpen(false)}>✕</button><strong>🧑‍🌾 Village trader</strong><p>Trade gathered materials for adventure coins.</p><div className="adventure-action-row"><button onClick={sellFish}>Sell 1 fish · 18 coins</button><button onClick={sellWood}>Sell 5 wood · 12 coins</button><button onClick={sellStone}>Sell 5 stone · 15 coins</button></div></div>}
