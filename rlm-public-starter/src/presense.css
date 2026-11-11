@@ -1,0 +1,14 @@
+/* Clan member presence indicators */
+.presence-avatar-wrap{position:relative;display:inline-flex;flex:0 0 auto;vertical-align:middle;}
+.presence-avatar-wrap>.chat-avatar,.presence-avatar-wrap>.chat-avatar-image,.presence-avatar-wrap>.sidebar-chat-avatar,.presence-avatar-wrap>.chat-message-avatar{display:block;}
+.presence-dot{position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border:2px solid var(--panel, #171b25);border-radius:50%;background:#fff;box-sizing:content-box;z-index:2;}
+.presence-dot.online{background:#22c55e;}
+.presence-dot.away{background:#facc15;}
+.presence-dot.offline{background:#fff;}
+.clan-presence-panel{margin:0 0 14px;padding:12px 14px;border:1px solid var(--border, rgba(255,255,255,.12));border-radius:12px;background:var(--panel, rgba(20,24,34,.75));}
+.clan-presence-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px;}
+.clan-presence-heading>span{font-size:.82rem;opacity:.75;}
+.clan-presence-list{display:flex;flex-wrap:wrap;gap:9px 16px;}
+.clan-presence-member{display:inline-flex;align-items:center;gap:7px;font-size:.9rem;}
+.clan-presence-member .presence-dot{position:static;width:8px;height:8px;border:1px solid rgba(0,0,0,.25);}
+.clan-presence-member small{opacity:.65;font-size:.75rem;}
