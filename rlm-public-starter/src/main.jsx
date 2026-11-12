@@ -3145,23 +3145,49 @@ function App() {
           -webkit-text-fill-color: transparent !important;
           font-weight: 950;
         }
+        /* Continuous sunlight glint: the base role colours stay gold/diamond-blue. */
         .member-name.owner-name .member-display-name {
           color: #f6cf58 !important;
-          background: linear-gradient(100deg, #9b6500 0%, #f6cf58 18%, #fff5c2 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%) !important;
-          background-size: 260% auto !important;
+          background: linear-gradient(108deg,
+            #9b6500 0%, #f6cf58 24%, #ffe9a0 37%,
+            #ffffff 43%, #fff5c2 47%, #d99a16 53%,
+            #fff0a0 69%, #b77908 84%, #f6cf58 100%) !important;
+          background-size: 320% 100% !important;
+          background-position: 0% center;
           background-clip: text !important;
           -webkit-background-clip: text !important;
           -webkit-text-fill-color: transparent !important;
-          animation: goldNameMorph 3.4s linear infinite !important;
-          filter: drop-shadow(0 0 4px rgba(255, 190, 35, .55));
+          animation: ownerSunlightGlint 2.25s ease-in-out infinite !important;
+          filter: drop-shadow(0 0 4px rgba(255, 190, 35, .65));
         }
         .member-name.co-owner-name .member-display-name {
           color: #38bdf8 !important;
-          background: linear-gradient(100deg, #075985 0%, #38bdf8 18%, #e0f7ff 34%, #0ea5e9 52%, #bae6fd 70%, #0369a1 88%, #38bdf8 100%) !important;
-          animation: diamondNameShine 3.4s linear infinite !important;
-          filter: drop-shadow(0 0 5px rgba(56, 189, 248, .85));
+          background: linear-gradient(108deg,
+            #075985 0%, #38bdf8 24%, #a5e8ff 37%,
+            #ffffff 43%, #e0f7ff 47%, #0ea5e9 53%,
+            #bae6fd 69%, #0369a1 84%, #38bdf8 100%) !important;
+          background-size: 320% 100% !important;
+          background-position: 0% center;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          animation: coOwnerSunlightGlint 2.25s ease-in-out infinite !important;
+          filter: drop-shadow(0 0 5px rgba(56, 189, 248, .9));
         }
-        @keyframes diamondNameShine { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
+        @keyframes ownerSunlightGlint {
+          0% { background-position: 0% center; }
+          55% { background-position: 100% center; }
+          100% { background-position: 0% center; }
+        }
+        @keyframes coOwnerSunlightGlint {
+          0% { background-position: 0% center; }
+          55% { background-position: 100% center; }
+          100% { background-position: 0% center; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .member-name.owner-name .member-display-name,
+          .member-name.co-owner-name .member-display-name { animation: none !important; }
+        }
         .owner-crown, .co-owner-diamond {
           display: inline-flex;
           align-items: center;
