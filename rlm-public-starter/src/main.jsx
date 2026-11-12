@@ -62,7 +62,7 @@ function MemberName({ person, role, tierRoles = [], className = '', cosmetics = 
           >{role === 'co_owner' ? 'Co-owner' : role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : 'Admin'}</span>
         )}
       </span>
-      {person?.username && <span className="member-username">@{person.username}</span>}
+      {person?.username && !/^player_[a-f0-9]{8,}$/i.test(person.username) && <span className="member-username">@{person.username}</span>}
     </span>
   )
 }
@@ -421,6 +421,7 @@ function App() {
   const [password, setPassword] = React.useState('')
   const [signupDisplayName, setSignupDisplayName] = React.useState('')
   const [signupUsername, setSignupUsername] = React.useState('')
+  const [myUsernameValue, setMyUsernameValue] = React.useState('')
   const [ownerUsernameTarget, setOwnerUsernameTarget] = React.useState('')
   const [ownerUsernameValue, setOwnerUsernameValue] = React.useState('')
   const [status, setStatus] = React.useState('')
@@ -629,7 +630,7 @@ function App() {
           setStatus(error.message)
         } else {
           const metadataUsername = session.user.user_metadata?.username
-          if (!data?.username && metadataUsername) {
+          if (!data?.username && metadataUsername && !/^player_[a-f0-9]{8,}$/i.test(metadataUsername)) {
             const { data: updatedProfile, error: updateError } = await supabase.from('profiles')
               .update({ username: metadataUsername })
               .eq('id', session.user.id)
@@ -638,13 +639,16 @@ function App() {
             if (!updateError && updatedProfile) {
               setProfile(updatedProfile)
               setNewDisplayName(updatedProfile.display_name || '')
+              setMyUsernameValue(updatedProfile.username && !/^player_[a-f0-9]{8,}$/i.test(updatedProfile.username) ? updatedProfile.username : '')
             } else {
               setProfile(data)
               setNewDisplayName(data?.display_name || '')
+              setMyUsernameValue(data?.username && !/^player_[a-f0-9]{8,}$/i.test(data.username) ? data.username : '')
             }
           } else {
             setProfile(data)
             setNewDisplayName(data?.display_name || '')
+            setMyUsernameValue(data?.username && !/^player_[a-f0-9]{8,}$/i.test(data.username) ? data.username : '')
           }
         }
       })
@@ -1599,6 +1603,25 @@ function App() {
     setConversations([])
     setStaffRole('member')
     setSuspension(null)
+  }
+
+  async function saveMyUsername() {
+    const cleanUsername = myUsernameValue.trim().toLowerCase()
+    if (!session || !supabase || !/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      setStatus('Choose a username of 3–20 characters using only letters, numbers, and underscores.')
+      return
+    }
+    setStaffBusy(true)
+    const { error } = await supabase.rpc('rlm_set_my_username', { p_username: cleanUsername })
+    if (error) {
+      setStatus('Could not save username: ' + error.message)
+    } else {
+      setProfile(current => ({ ...(current || {}), username: cleanUsername }))
+      setStatus('Your username has been updated.')
+      await refreshDirectory()
+      await refreshStaffData()
+    }
+    setStaffBusy(false)
   }
 
   async function ownerSetUsername() {
@@ -2931,7 +2954,14 @@ function App() {
               </div>
 
               <p><strong>Email:</strong> {session.user.email}</p>
-              <p><strong>Username:</strong> {profile?.username || 'Not set yet'}</p>
+              <section className="profile-staff-colour-section">
+                <h3>Your username</h3>
+                <p className="muted">This appears as @username underneath your display name. It is separate from your display name.</p>
+                <label>Username
+                  <input type="text" maxLength={20} minLength={3} autoComplete="username" placeholder="your_username" value={myUsernameValue} onChange={e => setMyUsernameValue(e.target.value.toLowerCase())} />
+                </label>
+                <button className="primary" type="button" disabled={staffBusy || !myUsernameValue.trim()} onClick={saveMyUsername}>Save username</button>
+              </section>
               <p>
                 <strong>Display name:</strong>{' '}
                 <MemberName
@@ -3038,15 +3068,14 @@ function App() {
         .member-display-name { color: var(--display-name-color, inherit) !important; -webkit-text-fill-color: var(--display-name-color, currentColor) !important; background: none !important; filter: none; text-shadow: none; }
 
         .owner-name {
+          display: inline-flex;
+          flex-direction: column;
+          align-items: flex-start;
           color: #ffd447 !important;
-          background: linear-gradient(100deg, #fff6bd 0%, #ffd447 28%, #e6a600 52%, #fff0a1 75%, #ffd447 100%);
-          background-size: 220% auto;
-          background-clip: text;
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          animation: ownerShine 3.2s linear infinite;
+          background: transparent !important;
+          -webkit-text-fill-color: initial !important;
           font-weight: 900;
-          filter: drop-shadow(0 0 5px rgba(255, 196, 36, 0.34));
+          filter: drop-shadow(0 0 4px rgba(255, 196, 36, 0.28));
         }
 
         .owner-crown {
@@ -3119,6 +3148,10 @@ function App() {
         .member-name.owner-name .member-display-name {
           color: #f6cf58 !important;
           background: linear-gradient(100deg, #9b6500 0%, #f6cf58 18%, #fff5c2 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%) !important;
+          background-size: 260% auto !important;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
           animation: goldNameMorph 3.4s linear infinite !important;
           filter: drop-shadow(0 0 4px rgba(255, 190, 35, .55));
         }
