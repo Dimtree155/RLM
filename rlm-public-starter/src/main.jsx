@@ -3516,7 +3516,41 @@ function App() {
           box-shadow: 0 0 8px rgba(56, 189, 248, .95), inset 0 0 2px rgba(255,255,255,.8) !important;
         }
 
-      `}</style>
+      `}
+        /* Final priority override: visible moving light streak on both staff names. */
+        .member-name.owner-name .member-display-name {
+          background-image: linear-gradient(105deg,
+            #9b6500 0%, #f6cf58 28%, #ffe9a0 38%,
+            #ffffff 46%, #fff5c2 50%, #d99a16 56%, #fff0a0 70%, #b77908 100%) !important;
+          background-size: 250% 100% !important;
+          background-position: 150% center !important;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          animation: rlmOwnerGlintSweep 1.8s linear infinite !important;
+          filter: drop-shadow(0 0 5px rgba(255, 205, 70, .9)) !important;
+        }
+        .member-name.co-owner-name .member-display-name {
+          background-image: linear-gradient(105deg,
+            #075985 0%, #38bdf8 28%, #a5e8ff 38%,
+            #ffffff 46%, #e0f7ff 50%, #0ea5e9 56%, #bae6fd 70%, #0369a1 100%) !important;
+          background-size: 250% 100% !important;
+          background-position: 150% center !important;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          animation: rlmCoOwnerGlintSweep 1.8s linear infinite !important;
+          filter: drop-shadow(0 0 6px rgba(56, 189, 248, .95)) !important;
+        }
+        @keyframes rlmOwnerGlintSweep {
+          from { background-position: 150% center; }
+          to { background-position: -150% center; }
+        }
+        @keyframes rlmCoOwnerGlintSweep {
+          from { background-position: 150% center; }
+          to { background-position: -150% center; }
+        }
+</style>
 
       <aside className="sidebar">
         <div className="brand">尺ḼⱮ<span>.</span></div>
