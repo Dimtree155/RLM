@@ -46,7 +46,7 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
   const isStaff = ['owner', 'co_owner', 'admin', 'moderator'].includes(role)
 
   return (
-    <span className={`member-name ${isOwner ? 'owner-name' : ''} ${className}`.trim()}>
+    <span className={`member-name ${isOwner ? 'owner-name' : ''} ${role === 'co_owner' ? 'co-owner-name' : ''} ${className}`.trim()}>
       {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
       {role === 'co_owner' && <span className="co-owner-diamond" aria-label="Co-owner" title="Co-owner">◆</span>}
       {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
@@ -2953,18 +2953,44 @@ function App() {
           box-shadow: 0 1px 3px rgba(0,0,0,.28);
         }
         .member-role-tag.owner, .member-role-tag.co_owner {
-          background: linear-gradient(110deg, var(--staff-name-color, #38bdf8), color-mix(in srgb, var(--staff-name-color, #38bdf8), white 42%), var(--staff-name-color, #38bdf8));
-          background-size: 220% 100%;
-          animation: staffTagShine 3.5s ease-in-out infinite;
+          color: #4a2b00;
+          background: linear-gradient(110deg, #9b6500 0%, #f6cf58 18%, #fff2b0 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%);
+          background-size: 260% 100%;
+          border: 1px solid #f5cf65;
+          box-shadow: 0 0 5px rgba(255, 198, 48, .55), inset 0 1px 0 rgba(255,255,255,.55);
+          animation: goldBannerShine 3s linear infinite;
         }
         .member-role-tag.admin { animation: none !important; background: var(--staff-name-color, #f97316); }
-        @keyframes staffTagShine { 0%,100% { background-position: 0% center; } 50% { background-position: 100% center; } }
+        @keyframes goldBannerShine { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
+        .member-name.owner-name .member-display-name,
+        .member-name.co-owner-name .member-display-name {
+          color: #f6cf58 !important;
+          background: linear-gradient(100deg, #9b6500 0%, #f6cf58 18%, #fff5c2 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%) !important;
+          background-size: 260% auto !important;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          animation: goldNameMorph 3.4s linear infinite;
+          font-weight: 950;
+          filter: drop-shadow(0 0 4px rgba(255, 190, 35, .42));
+        }
+        .owner-crown, .co-owner-diamond {
+          color: #f6cf58 !important;
+          background: linear-gradient(120deg, #9b6500, #f6cf58, #fff5c2, #d99a16, #fff0a0, #b77908, #f6cf58);
+          background-size: 260% 100%;
+          background-clip: text;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent !important;
+          animation: goldNameMorph 2.8s linear infinite;
+          filter: drop-shadow(0 0 5px rgba(255, 190, 35, .65));
+        }
+        @keyframes goldNameMorph { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
         .staff-name-color-grid { display:grid; grid-template-columns:repeat(6, minmax(34px, 44px)); gap:10px; margin:12px 0; }
         .staff-name-color-swatch { width:38px; height:38px; border-radius:10px; border:2px solid rgba(255,255,255,.35); background:var(--swatch-color); cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); }
         .staff-name-color-swatch.selected { outline:3px solid #fff; outline-offset:2px; transform:scale(1.06); }
         .staff-name-color-swatch:disabled { opacity:.65; cursor:wait; }
         .staff-name-color-preview { display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:700; }
-        @media (prefers-reduced-motion: reduce) { .member-role-tag.owner, .member-role-tag.co_owner { animation:none; } }
+        @media (prefers-reduced-motion: reduce) { .member-role-tag.owner, .member-role-tag.co_owner, .member-name.owner-name .member-display-name, .member-name.co-owner-name .member-display-name, .owner-crown, .co-owner-diamond { animation:none !important; } }
 
         @keyframes ownerShine {
           to { background-position: 220% center; }
@@ -2995,10 +3021,7 @@ function App() {
         .profile-hover-heading small { color:#b99cff; }
         .profile-hover-title { color:#ffd447; font-weight:800; }
         .progress-summary { display:flex; flex-wrap:wrap; gap:14px; padding:12px; margin:12px 0; border-radius:10px; background:rgba(130,90,220,.12); }
-        .co-owner-diamond { display:inline-flex; align-items:center; justify-content:center; color:#38cfff; font-size:1.08em; line-height:1; font-weight:900; -webkit-text-fill-color:#38cfff; text-shadow:0 1px 1px rgba(0,35,65,.9); filter:none; }
-        .member-name:has(.co-owner-diamond) { color:#65dcff; font-weight:800; text-shadow:none; -webkit-text-stroke:.15px rgba(0,35,65,.7); }
-        .member-name:has(.co-owner-diamond) .member-role-tag.co_owner { color:#eafaff; background:#087eae; border:1px solid #42d4ff; border-radius:5px; padding:2px 6px; font-weight:900; text-shadow:none; box-shadow:0 0 0 1px rgba(0,35,65,.45); }
-        .member-name:has(.co-owner-diamond) .member-role-tag.co_owner { background:linear-gradient(110deg,var(--staff-name-color,#38bdf8),color-mix(in srgb,var(--staff-name-color,#38bdf8),white 42%),var(--staff-name-color,#38bdf8)); background-size:220% 100%; border-color:var(--staff-name-color,#38bdf8); animation:staffTagShine 3.5s ease-in-out infinite; }
+        .co-owner-diamond { display:inline-flex; align-items:center; justify-content:center; font-size:1.12em; line-height:1; font-weight:950; }
         .clan-message-row { position:relative; }
         .chat-delete-message { margin-left:auto; border:1px solid rgba(255,100,100,.3); background:rgba(210,60,70,.1); color:#ff9da4; border-radius:7px; padding:4px 8px; font-size:11px; cursor:pointer; }
         .clan-chat-image { display:block; max-width:min(360px,100%); max-height:280px; object-fit:contain; margin-top:8px; border-radius:10px; border:1px solid rgba(160,140,200,.3); }
