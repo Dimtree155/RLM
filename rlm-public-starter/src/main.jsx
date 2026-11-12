@@ -120,6 +120,123 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
   )
 }
 
+const BLOCK_SHAPES = [
+  [[0,0],[1,0],[2,0]], [[0,0],[0,1],[1,1]], [[0,0],[1,0],[0,1],[1,1]],
+  [[0,0],[0,1],[0,2]], [[0,0],[1,0],[2,0],[1,1]], [[0,0],[1,0],[2,0],[0,1]],
+  [[0,0],[1,0],[1,1]], [[0,0],[1,0],[2,0],[3,0]], [[0,0],[1,0],[0,1]]
+]
+
+function BlockBlastGame({ onRecordGame }) {
+  const empty = () => Array.from({ length: 10 }, () => Array(10).fill(false))
+  const [grid, setGrid] = React.useState(empty)
+  const [pieces, setPieces] = React.useState(() => [0, 2, 4])
+  const [selected, setSelected] = React.useState(0)
+  const [score, setScore] = React.useState(0)
+  const [over, setOver] = React.useState(false)
+  const [round, setRound] = React.useState(0)
+
+  function fits(board, shape, x, y) {
+    return shape.every(([dx, dy]) => x + dx < 10 && y + dy < 10 && !board[y + dy]?.[x + dx])
+  }
+  function canAnyFit(board, list) {
+    return list.some(index => BLOCK_SHAPES[index].some(([mx, my]) => {
+      for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (fits(board, BLOCK_SHAPES[index], x, y)) return true
+      return false
+    }))
+  }
+  function place(x, y) {
+    if (over || pieces[selected] == null) return
+    const shape = BLOCK_SHAPES[pieces[selected]]
+    if (!fits(grid, shape, x, y)) return
+    const next = grid.map(row => [...row])
+    shape.forEach(([dx, dy]) => { next[y + dy][x + dx] = true })
+    const fullRows = next.map((row, i) => row.every(Boolean) ? i : -1).filter(i => i >= 0)
+    const fullCols = Array.from({ length: 10 }, (_, x2) => x2).filter(x2 => next.every(row => row[x2]))
+    fullRows.forEach(row => { next[row] = Array(10).fill(false) })
+    fullCols.forEach(col => { for (let row = 0; row < 10; row++) next[row][col] = false })
+    const cleared = fullRows.length + fullCols.length
+    const nextPieces = [...pieces]
+    nextPieces[selected] = null
+    const nextScore = score + shape.length + cleared * 10 + Math.max(0, cleared - 1) * 5
+    setGrid(next); setScore(nextScore)
+    if (nextPieces.every(piece => piece == null)) {
+      const newPieces = Array.from({ length: 3 }, () => Math.floor(Math.random() * BLOCK_SHAPES.length))
+      setPieces(newPieces); setSelected(0); setRound(value => value + 1)
+      if (!canAnyFit(next, newPieces)) { setOver(true); onRecordGame('block-blast') }
+    } else {
+      setPieces(nextPieces)
+      const remaining = nextPieces.filter(piece => piece != null)
+      if (!canAnyFit(next, remaining)) { setOver(true); onRecordGame('block-blast') }
+      else if (nextPieces[selected] == null) setSelected(nextPieces.findIndex(piece => piece != null))
+    }
+  }
+  function restart() { setGrid(empty()); setPieces([0,2,4]); setSelected(0); setScore(0); setOver(false); setRound(0) }
+  return <div className="panel game-panel arcade-game"><h3>🧩 Block Blast</h3><p className="muted">Choose a shape, then tap the board to place it. Complete full rows or columns to clear them.</p><div className="arcade-score">Score: {score}</div><div className="block-grid" role="grid" aria-label="Block Blast board">{grid.map((row,y) => row.map((filled,x) => <button key={`${x}-${y}`} aria-label={`Row ${y+1}, column ${x+1}`} className={`block-cell ${filled ? 'filled' : ''}`} onClick={() => place(x,y)} disabled={over || pieces[selected] == null} />))}</div><div className="piece-tray">{pieces.map((piece,i) => <button key={`${round}-${i}`} className={`piece-choice ${selected === i ? 'chosen' : ''}`} onClick={() => setSelected(i)} disabled={piece == null || over}>{piece == null ? '✓' : BLOCK_SHAPES[piece].map(([x,y]) => <i key={`${x}-${y}`} style={{ gridColumn:x+1, gridRow:y+1 }} />)}</button>)}</div>{over && <p className="game-over">No more moves — final score {score}</p>}<button className="secondary" onClick={restart}>New game</button></div>
+}
+
+function Game2048({ onRecordGame }) {
+  const makeBoard = () => { const board = Array(16).fill(0); [Math.floor(Math.random()*16), Math.floor(Math.random()*16)].forEach(i => { if (!board[i]) board[i] = Math.random() < .0 ? 4 : 2 }); return board }
+  const [board, setBoard] = React.useState(makeBoard)
+  const [score, setScore] = React.useState(0)
+  const [over, setOver] = React.useState(false)
+  const [won, setWon] = React.useState(false)
+  const boardRef = React.useRef(board); boardRef.current = board
+  function move(direction) {
+    if (over) return
+    const old = boardRef.current
+    const next = Array(16).fill(0); let gained = 0
+    for (let line = 0; line < 4; line++) {
+      let indices = Array.from({length:4}, (_,n) => direction === 'left' ? line*4+n : direction === 'right' ? line*4+3-n : direction === 'up' ? n*4+line : (3-n)*4+line)
+      let values = indices.map(i => old[i]).filter(Boolean), merged = []
+      for (let i=0;i<values.length;i++) { if (values[i] === values[i+1]) { merged.push(values[i]*2); gained += values[i]*2; i++ } else merged.push(values[i]) }
+      indices.forEach((idx,n) => { next[idx] = merged[n] || 0 })
+    }
+    if (next.every((v,i) => v === old[i])) return
+    const empty = next.map((v,i) => v ? -1 : i).filter(i => i >= 0)
+    if (empty.length) { const idx = empty[Math.floor(Math.random()*empty.length)]; next[idx] = Math.random() < .1 ? 4 : 2 }
+    const nextScore = score + gained; setBoard(next); setScore(nextScore)
+    if (!won && next.includes(2048)) setWon(true)
+    const noMoves = next.every(Boolean) && !next.some((v,i) => i%4<3 && v===next[i+1] || i<12 && v===next[i+4])
+    if (noMoves) { setOver(true); onRecordGame('2048') }
+  }
+  React.useEffect(() => { const key = e => { const map = {ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right',ArrowUp:'up',w:'up',ArrowDown:'down',s:'down'}; if (map[e.key]) { e.preventDefault(); move(map[e.key]) } }; window.addEventListener('keydown',key); return () => window.removeEventListener('keydown',key) })
+  function restart() { setBoard(makeBoard()); setScore(0); setOver(false); setWon(false) }
+  return <div className="panel game-panel arcade-game"><h3>🔢 2048</h3><p className="muted">Use the arrow keys or buttons to slide tiles. Combine matching numbers to reach 2048.</p><div className="arcade-score">Score: {score}</div><div className="number-grid">{board.map((value,i) => <div key={i} className={`number-tile tile-${Math.min(value,2048)}`}>{value || ''}</div>)}</div><div className="direction-pad"><button onClick={() => move('up')}>↑</button><div><button onClick={() => move('left')}>←</button><button onClick={() => move('down')}>↓</button><button onClick={() => move('right')}>→</button></div></div>{won && <p className="game-win">2048 reached! Keep going if you want.</p>}{over && <p className="game-over">No moves left — final score {score}</p>}<button className="secondary" onClick={restart}>New game</button></div>
+}
+
+function FruitMergeGame({ onRecordGame }) {
+  const fruits = ['🍒','🍓','🍇','🍊','🍋','🍎','🍐','🍑','🍍','🍉']
+  const [columns,setColumns] = React.useState(() => Array(5).fill(null).map(() => []))
+  const [next,setNext] = React.useState(0)
+  const [score,setScore] = React.useState(0)
+  const [over,setOver] = React.useState(false)
+  function drop(col) {
+    if (over || columns[col].length >= 6) { if (columns.every(c => c.length >= 6)) { setOver(true); onRecordGame('fruit-merge') } return }
+    const updated = columns.map(c => [...c]); let level = next; updated[col].push(level)
+    let gained = 0, changed = true
+    while (changed) { changed = false; const stack = updated[col]; if (stack.length >= 2 && stack[stack.length-1] === stack[stack.length-2] && stack[stack.length-1] < 9) { stack.splice(-2,2,stack[stack.length-1]+1); gained += 10*(stack[stack.length-1]+1); changed = true } }
+    setColumns(updated); setScore(s => s+gained); setNext(Math.floor(Math.random()*Math.min(5, fruits.length)))
+    if (updated.every(c => c.length >= 6)) { setOver(true); onRecordGame('fruit-merge') }
+  }
+  function restart() { setColumns(Array(5).fill(null).map(() => [])); setNext(0); setScore(0); setOver(false) }
+  return <div className="panel game-panel arcade-game"><h3>🍉 Fruit Merge</h3><p className="muted">Drop fruit into a column. Two matching fruits touching at the bottom merge into a bigger fruit.</p><div className="arcade-score">Score: {score} <span>Next: {fruits[next]}</span></div><div className="fruit-board">{columns.map((col,i) => <button key={i} className="fruit-column" onClick={() => drop(i)} disabled={over || col.length>=6}>{Array.from({length:6},(_,row) => { const fruit = col[5-row]; return <span key={row} className="fruit-cell">{fruit == null ? '' : fruits[fruit]}</span> })}</button>)}</div>{over && <p className="game-over">Board full — final score {score}</p>}<button className="secondary" onClick={restart}>New game</button></div>
+}
+
+function SnakeGame({ onRecordGame }) {
+  const [snake,setSnake] = React.useState([[5,5],[4,5],[3,5]])
+  const [food,setFood] = React.useState([7,5])
+  const [direction,setDirection] = React.useState([1,0])
+  const directionRef = React.useRef(direction); directionRef.current = direction
+  const [running,setRunning] = React.useState(false)
+  const [over,setOver] = React.useState(false)
+  const [score,setScore] = React.useState(0)
+  const snakeRef = React.useRef(snake); snakeRef.current = snake
+  React.useEffect(() => { const key = e => { const dirs = {ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1],ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0]}; const d=dirs[e.key]; if (d) { e.preventDefault(); const old=directionRef.current; if (d[0] !== -old[0] || d[1] !== -old[1]) { directionRef.current=d; setDirection(d); setRunning(true) } } }; window.addEventListener('keydown',key); return () => window.removeEventListener('keydown',key) },[])
+  React.useEffect(() => { if (!running || over) return; const id=setInterval(() => { const current=snakeRef.current, d=directionRef.current, head=[current[0][0]+d[0],current[0][1]+d[1]], eating=head[0]===food[0]&&head[1]===food[1], body=eating?current:current.slice(0,-1); if(head[0]<0||head[0]>=12||head[1]<0||head[1]>=12||body.some(([x,y])=>x===head[0]&&y===head[1])) { setOver(true); setRunning(false); onRecordGame('snake'); return } const next=[head,...current]; if(!eating) next.pop(); setSnake(next); if(eating) { setScore(s=>s+1); let point; do { point=[Math.floor(Math.random()*12),Math.floor(Math.random()*12)] } while(next.some(([x,y])=>x===point[0]&&y===point[1])); setFood(point) } },150); return () => clearInterval(id) },[running,over,food,onRecordGame])
+  function restart() { setSnake([[5,5],[4,5],[3,5]]); snakeRef.current=[[5,5],[4,5],[3,5]]; setFood([7,5]); setDirection([1,0]); directionRef.current=[1,0]; setScore(0); setOver(false); setRunning(false) }
+  return <div className="panel game-panel arcade-game"><h3>🐍 Snake</h3><p className="muted">Classic — eat, grow, don't hit yourself. Use WASD or arrow keys.</p><div className="arcade-score">Score: {score}</div><div className="snake-board">{Array.from({length:144},(_,i) => { const x=i%12,y=Math.floor(i/12), isSnake=snake.some(([sx,sy])=>sx===x&&sy===y); return <span key={i} className={`snake-cell ${isSnake?'snake-body':''} ${snake[0][0]===x&&snake[0][1]===y?'snake-head':''} ${food[0]===x&&food[1]===y?'snake-food':''}`}>{food[0]===x&&food[1]===y?'●':''}</span> })}</div><div className="direction-pad snake-pad"><button onClick={() => { if (directionRef.current[1] !== 1) { directionRef.current=[0,-1]; setDirection([0,-1]); setRunning(true) } }}>↑</button><div><button onClick={() => { if (directionRef.current[0] !== 1) { directionRef.current=[-1,0]; setDirection([-1,0]); setRunning(true) } }}>←</button><button onClick={() => { if (directionRef.current[1] !== -1) { directionRef.current=[0,1]; setDirection([0,1]); setRunning(true) } }}>↓</button><button onClick={() => { if (directionRef.current[0] !== -1) { directionRef.current=[1,0]; setDirection([1,0]); setRunning(true) } }}>→</button></div></div>{over && <p className="game-over">Game over — final score {score}</p>}{!running && !over && <p className="muted">Use the arrow buttons, arrow keys or WASD to start moving.</p>}<button className="secondary" onClick={restart}>Restart</button></div>
+}
+
 function MiniGames({ onRecordGame }) {
   const [game, setGame] = React.useState('tic-tac-toe')
   const [board, setBoard] = React.useState(Array(9).fill(''))
@@ -128,92 +245,19 @@ function MiniGames({ onRecordGame }) {
   const [reactionStart, setReactionStart] = React.useState(0)
   const [reactionResult, setReactionResult] = React.useState('')
   const timerRef = React.useRef(null)
-
   React.useEffect(() => () => clearTimeout(timerRef.current), [])
-
-  function winnerOf(cells) {
-    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]
-    for (const [a,b,c] of lines) if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a]
-    return cells.every(Boolean) ? 'draw' : null
-  }
-
-  function playCell(index) {
-    if (board[index] || winnerOf(board)) return
-    const next = [...board]
-    next[index] = 'X'
-    const humanResult = winnerOf(next)
-    if (humanResult) {
-      setBoard(next)
-      setRoundMessage(humanResult === 'X' ? 'You won! 🎉' : 'It is a draw.')
-      onRecordGame('tic-tac-toe')
-      return
-    }
-    const available = next.map((value, i) => value ? -1 : i).filter(i => i >= 0)
-    const botMove = available[Math.floor(Math.random() * available.length)]
-    next[botMove] = 'O'
-    const result = winnerOf(next)
-    setBoard(next)
-    if (result) {
-      setRoundMessage(result === 'O' ? 'The computer won. Try again!' : 'It is a draw.')
-      onRecordGame('tic-tac-toe')
-    } else setRoundMessage('Your turn — choose a square.')
-  }
-
-  function resetBoard() {
-    setBoard(Array(9).fill(''))
-    setRoundMessage('You are X. Try to beat the computer.')
-  }
-
-  function startReaction() {
-    clearTimeout(timerRef.current)
-    setReactionResult('Wait for GO…')
-    setReactionPhase('waiting')
-    timerRef.current = setTimeout(() => {
-      setReactionStart(Date.now())
-      setReactionPhase('go')
-      setReactionResult('GO! Click the button!')
-    }, 1200 + Math.floor(Math.random() * 1800))
-  }
-
-  function hitReaction() {
-    if (reactionPhase === 'waiting') {
-      clearTimeout(timerRef.current)
-      setReactionPhase('idle')
-      setReactionResult('Too early! Press Start and try again.')
-    } else if (reactionPhase === 'go') {
-      const ms = Date.now() - reactionStart
-      setReactionPhase('idle')
-      setReactionResult(`Your reaction time: ${ms} ms`)
-      onRecordGame('reaction')
-    }
-  }
-
-  return (
-    <div className="minigames-wrap">
-      <div className="game-tabs">
-        <button className={game === 'tic-tac-toe' ? 'primary' : 'secondary'} onClick={() => setGame('tic-tac-toe')}>⭕ Tic-tac-toe</button>
-        <button className={game === 'reaction' ? 'primary' : 'secondary'} onClick={() => setGame('reaction')}>⚡ Reaction test</button>
-      </div>
-      {game === 'tic-tac-toe' ? (
-        <div className="panel game-panel">
-          <h3>⭕ Tic-tac-toe</h3>
-          <p className="muted">Play as X against the computer. A completed round counts toward your daily game quests.</p>
-          <div className="tic-board">{board.map((cell, index) => <button key={index} className="tic-cell" onClick={() => playCell(index)} disabled={Boolean(cell) || Boolean(winnerOf(board))}>{cell}</button>)}</div>
-          <p>{roundMessage}</p>
-          <button className="secondary" onClick={resetBoard}>New round</button>
-        </div>
-      ) : (
-        <div className="panel game-panel">
-          <h3>⚡ Reaction test</h3>
-          <p className="muted">Press Start, wait for GO, then click as quickly as you can. Clicking early cancels the round.</p>
-          <div className="reaction-display">{reactionResult || 'Ready when you are'}</div>
-          {reactionPhase === 'idle' ? <button className="primary" onClick={startReaction}>Start</button> : <button className="primary" onClick={hitReaction}>{reactionPhase === 'waiting' ? 'Wait…' : 'CLICK!'}</button>}
-        </div>
-      )}
-    </div>
-  )
+  function winnerOf(cells) { const lines=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]; for(const [a,b,c] of lines) if(cells[a]&&cells[a]===cells[b]&&cells[a]===cells[c]) return cells[a]; return cells.every(Boolean)?'draw':null }
+  function playCell(index) { if(board[index]||winnerOf(board)) return; const next=[...board]; next[index]='X'; const result=winnerOf(next); if(result){setBoard(next);setRoundMessage(result==='X'?'You won! 🎉':'It is a draw.');onRecordGame('tic-tac-toe');return} const available=next.map((v,i)=>v?-1:i).filter(i=>i>=0); next[available[Math.floor(Math.random()*available.length)]]='O'; const final=winnerOf(next); setBoard(next); if(final){setRoundMessage(final==='O'?'The computer won. Try again!':'It is a draw.');onRecordGame('tic-tac-toe')} else setRoundMessage('Your turn — choose a square.') }
+  function resetBoard(){setBoard(Array(9).fill(''));setRoundMessage('You are X. Try to beat the computer.')}
+  function startReaction(){clearTimeout(timerRef.current);setReactionResult('Wait for GO…');setReactionPhase('waiting');timerRef.current=setTimeout(()=>{setReactionStart(Date.now());setReactionPhase('go');setReactionResult('GO! Click the button!')},1200+Math.floor(Math.random()*1800))}
+  function hitReaction(){if(reactionPhase==='waiting'){clearTimeout(timerRef.current);setReactionPhase('idle');setReactionResult('Too early! Press Start and try again.')}else if(reactionPhase==='go'){const ms=Date.now()-reactionStart;setReactionPhase('idle');setReactionResult(`Your reaction time: ${ms} ms`);onRecordGame('reaction')}}
+  const tabs=[['tic-tac-toe','⭕ Tic-tac-toe'],['reaction','⚡ Reaction test'],['block','🧩 Block Blast'],['2048','🔢 2048'],['fruit','🍉 Fruit Merge'],['snake','🐍 Snake']]
+  return <div className="minigames-wrap"><div className="game-tabs">{tabs.map(([id,label])=><button key={id} className={game===id?'primary':'secondary'} onClick={()=>setGame(id)}>{label}</button>)}</div>
+    {game==='tic-tac-toe'&&<div className="panel game-panel"><h3>⭕ Tic-tac-toe</h3><p className="muted">Play as X against the computer. A completed round counts toward your daily game quests.</p><div className="tic-board">{board.map((cell,index)=><button key={index} className="tic-cell" onClick={()=>playCell(index)} disabled={Boolean(cell)||Boolean(winnerOf(board))}>{cell}</button>)}</div><p>{roundMessage}</p><button className="secondary" onClick={resetBoard}>New round</button></div>}
+    {game==='reaction'&&<div className="panel game-panel"><h3>⚡ Reaction test</h3><p className="muted">Press Start, wait for GO, then click as quickly as you can. Clicking early cancels the round.</p><div className="reaction-display">{reactionResult||'Ready when you are'}</div>{reactionPhase==='idle'?<button className="primary" onClick={startReaction}>Start</button>:<button className="primary" onClick={hitReaction}>{reactionPhase==='waiting'?'Wait…':'CLICK!'}</button>}</div>}
+    {game==='block'&&<BlockBlastGame onRecordGame={onRecordGame}/>}{game==='2048'&&<Game2048 onRecordGame={onRecordGame}/>}{game==='fruit'&&<FruitMergeGame onRecordGame={onRecordGame}/>}{game==='snake'&&<SnakeGame onRecordGame={onRecordGame}/>}
+  </div>
 }
-
 function App() {
   const [session, setSession] = React.useState(null)
   const [email, setEmail] = React.useState('')
@@ -2786,6 +2830,26 @@ function App() {
 
         .game-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
         .game-panel { text-align:center; }
+        .arcade-game { max-width:560px; margin:0 auto; }
+        .arcade-score { display:flex; justify-content:space-between; max-width:430px; margin:10px auto; font-weight:800; }
+        .block-grid { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:3px; width:min(100%,430px); aspect-ratio:1; margin:14px auto; padding:6px; border-radius:12px; background:#30283d; }
+        .block-cell { min-width:0; border:1px solid #514663; border-radius:4px; background:#211b30; padding:0; }
+        .block-cell.filled { background:#9b75ff; border-color:#c4adff; }
+        .piece-tray { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin:12px auto; }
+        .piece-choice { display:grid; grid-template-columns:repeat(4,17px); grid-template-rows:repeat(4,17px); gap:2px; min-width:92px; min-height:82px; place-content:center; border:1px solid #514663; border-radius:10px; background:#211b30; }
+        .piece-choice.chosen { outline:2px solid #b69aff; }
+        .piece-choice i { width:17px; height:17px; background:#9b75ff; border-radius:3px; }
+        .number-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; width:min(100%,390px); aspect-ratio:1; margin:14px auto; padding:8px; background:#554b40; border-radius:12px; }
+        .number-tile { display:grid; place-items:center; border-radius:7px; background:#756b60; color:#fff; font-size:clamp(1rem,5vw,1.7rem); font-weight:850; }
+        .tile-2 { background:#eee4da; color:#554b40; } .tile-4 { background:#ede0c8; color:#554b40; } .tile-8 { background:#f2b179; } .tile-16 { background:#f59563; } .tile-32 { background:#f67c5f; } .tile-64 { background:#f65e3b; } .tile-128,.tile-256,.tile-512 { background:#edcf72; color:#51452e; } .tile-1024,.tile-2048 { background:#edc53f; color:#51452e; }
+        .direction-pad { display:grid; justify-content:center; gap:5px; margin:10px; } .direction-pad div { display:flex; justify-content:center; gap:5px; } .direction-pad button { min-width:46px; min-height:38px; border-radius:8px; }
+        .fruit-board { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; width:min(100%,430px); margin:14px auto; padding:7px; background:#30283d; border-radius:12px; }
+        .fruit-column { display:flex; flex-direction:column; gap:4px; min-width:0; padding:4px; border:1px solid #514663; border-radius:8px; background:#211b30; }
+        .fruit-cell { display:grid; place-items:center; aspect-ratio:1; font-size:clamp(1.1rem,5vw,1.8rem); background:#342b43; border-radius:6px; }
+        .snake-board { display:grid; grid-template-columns:repeat(12,1fr); gap:2px; width:min(100%,420px); aspect-ratio:1; margin:14px auto; padding:6px; border-radius:10px; background:#283b35; }
+        .snake-cell { background:#b8d7a6; border-radius:2px; } .snake-cell.snake-body { background:#328b59; } .snake-cell.snake-head { background:#146b3b; outline:2px solid #a7f3c2; } .snake-cell.snake-food { background:#f3d36b; border-radius:50%; }
+        .game-over { color:#ff9b9b !important; font-weight:800; } .game-win { color:#9ce9b5 !important; font-weight:800; }
+
         .tic-board { display:grid; grid-template-columns:repeat(3, minmax(65px, 90px)); justify-content:center; gap:7px; margin:18px auto; }
         .tic-cell { height:78px; border-radius:10px; border:1px solid rgba(170,140,255,.4); background:rgba(120,90,200,.14); color:inherit; font-size:2rem; font-weight:800; cursor:pointer; }
         .tic-cell:disabled { cursor:default; opacity:.85; }
