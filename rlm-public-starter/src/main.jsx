@@ -41,7 +41,7 @@ function ChatAvatar({ person, className = 'chat-avatar', presenceStatus = 'offli
   )
 }
 
-function MemberName({ person, role, className = '', cosmetics = null }) {
+function MemberName({ person, role, tierRoles = [], className = '', cosmetics = null }) {
   const isOwner = role === 'owner'
   const isStaff = ['owner', 'co_owner', 'admin', 'moderator'].includes(role)
 
@@ -52,6 +52,7 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
         {role === 'co_owner' && <span className="co-owner-diamond" aria-label="Co-owner" title="Co-owner"><span className="co-owner-diamond-shape" /></span>}
         {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
         <span className="member-display-name" style={cosmetics?.display_name_color ? { '--display-name-color': cosmetics.display_name_color } : undefined}>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
+        {tierRoles.map(tier => <span key={tier} className={`member-tier-badge tier-${tier}`} title={`${tier.toUpperCase()} tier`}>{tier[0].toUpperCase()}</span>)}
         {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
         {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
         {isStaff && (
@@ -67,7 +68,7 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
 }
 
 
-function ProfileHover({ person, role, cosmetics, supabase, children }) {
+function ProfileHover({ person, role, tierRoles = [], cosmetics, supabase, children }) {
   const [open, setOpen] = React.useState(false)
   const [stats, setStats] = React.useState(null)
   const [loading, setLoading] = React.useState(false)
@@ -99,7 +100,7 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
       onFocus={showProfile}
       onBlur={() => setOpen(false)}
     >
-      {children || <MemberName person={person} role={role} cosmetics={cosmetics} />}
+      {children || <MemberName person={person} role={role} tierRoles={tierRoles} cosmetics={cosmetics} />}
       {open && (
         <span className="profile-hover-card" role="status" style={{ top: cardPosition.top, left: cardPosition.left }}>
           <span className="profile-hover-heading">
@@ -445,6 +446,9 @@ function App() {
   const [loadingMembers, setLoadingMembers] = React.useState(false)
   const [friendshipBusy, setFriendshipBusy] = React.useState('')
   const [memberRoles, setMemberRoles] = React.useState({})
+  const [memberTierRoles, setMemberTierRoles] = React.useState({})
+  const [tierRoleTarget, setTierRoleTarget] = React.useState('')
+  const [tierRoleChoices, setTierRoleChoices] = React.useState([])
   const [memberCosmetics, setMemberCosmetics] = React.useState({})
   const [selectedStaffNameColor, setSelectedStaffNameColor] = React.useState('#38bdf8')
   const [savingStaffNameColor, setSavingStaffNameColor] = React.useState(false)
@@ -723,6 +727,25 @@ function App() {
     return () => { cancelled = true }
   }, [session])
 
+  React.useEffect(() => {
+    let cancelled = false
+    async function loadPublicTierRoles() {
+      if (!session || !supabase) { setMemberTierRoles({}); return }
+      const { data, error } = await supabase.rpc('rlm_get_public_member_tier_roles')
+      if (cancelled) return
+      if (error) {
+        setStatus('Could not load tier badges: ' + error.message + '. Run the tier roles migration first.')
+        setMemberTierRoles({})
+      } else {
+        const grouped = {}
+        ;(data || []).forEach(row => { (grouped[row.user_id] ||= []).push(row.tier) })
+        setMemberTierRoles(grouped)
+      }
+    }
+    loadPublicTierRoles()
+    return () => { cancelled = true }
+  }, [session])
+
 
   React.useEffect(() => {
     let cancelled = false
@@ -872,6 +895,21 @@ function App() {
     })
     if (error) setStatus('Could not update staff role: ' + error.message)
     else { setStatus(`Member role changed to ${ownerRoleChoice}.`); setOwnerRoleTarget(''); await refreshStaffData(); const { data } = await supabase.rpc('get_public_member_roles'); setMemberRoles(Object.fromEntries((data || []).map(row => [row.user_id,row.role]))) }
+    setStaffBusy(false)
+  }
+
+  async function ownerSaveTierRoles() {
+    if (staffRole !== 'owner' || !tierRoleTarget || !supabase) return
+    setStaffBusy(true)
+    const { error } = await supabase.rpc('rlm_owner_set_member_tier_roles', {
+      p_target_user_id: tierRoleTarget,
+      p_tiers: tierRoleChoices
+    })
+    if (error) setStatus('Could not update tier badges: ' + error.message)
+    else {
+      setMemberTierRoles(current => ({ ...current, [tierRoleTarget]: [...tierRoleChoices] }))
+      setStatus('Member tier badges updated. These badges do not grant permissions.')
+    }
     setStaffBusy(false)
   }
 
@@ -1994,7 +2032,7 @@ function App() {
                   >
                     <ChatAvatar person={conversation.friend} presenceStatus={presenceStatus(conversation.friend?.id)} />
                     <span className="chat-conversation-name">
-                      <ProfileHover supabase={supabase} person={conversation.friend} role={memberRoles[conversation.friend.id]} cosmetics={memberCosmetics[conversation.friend.id]} />
+                      <ProfileHover supabase={supabase} person={conversation.friend} role={memberRoles[conversation.friend.id]} tierRoles={memberTierRoles[conversation.friend.id]} cosmetics={memberCosmetics[conversation.friend.id]} />
                     </span>
                   </button>
                 ))
@@ -2008,7 +2046,7 @@ function App() {
                     <ChatAvatar person={selectedFriend} />
                     <div>
                       <strong>
-                        <ProfileHover supabase={supabase} person={selectedFriend} role={memberRoles[selectedFriend?.id]} cosmetics={memberCosmetics[selectedFriend?.id]} />
+                        <ProfileHover supabase={supabase} person={selectedFriend} role={memberRoles[selectedFriend?.id]} tierRoles={memberTierRoles[selectedFriend?.id]} cosmetics={memberCosmetics[selectedFriend?.id]} />
                       </strong>
                       <small>Private conversation</small>
                     </div>
@@ -2044,7 +2082,7 @@ function App() {
                                   {isOwn ? (
                                     <ProfileHover supabase={supabase} person={{ id: session.user.id, display_name: profile?.display_name || 'You' }} role={memberRoles[session.user.id] || staffRole} cosmetics={memberCosmetics[session.user.id]} />
                                   ) : (
-                                    <ProfileHover supabase={supabase} person={selectedFriend} role={memberRoles[selectedFriend?.id]} cosmetics={memberCosmetics[selectedFriend?.id]} />
+                                    <ProfileHover supabase={supabase} person={selectedFriend} role={memberRoles[selectedFriend?.id]} tierRoles={memberTierRoles[selectedFriend?.id]} cosmetics={memberCosmetics[selectedFriend?.id]} />
                                   )}
                                 </strong>
                                 <small>
@@ -2167,7 +2205,7 @@ function App() {
 
                     <div className="clan-message-content">
                       <div className="chat-message-meta">
-                        <strong><ProfileHover supabase={supabase} person={message.sender} role={memberRoles[message.sender?.id]} cosmetics={memberCosmetics[message.sender?.id]} /></strong>
+                        <strong><ProfileHover supabase={supabase} person={message.sender} role={memberRoles[message.sender?.id]} tierRoles={memberTierRoles[message.sender?.id]} cosmetics={memberCosmetics[message.sender?.id]} /></strong>
                         <small>
                           {new Date(message.created_at).toLocaleString(
                             [],
@@ -2252,7 +2290,7 @@ function App() {
               return (
                 <div className="panel" key={row.id}>
                   <strong>
-                    <MemberName person={sender} role={memberRoles[row.requester]} />
+                    <MemberName person={sender} role={memberRoles[row.requester]} tierRoles={memberTierRoles[row.requester]} />
                   </strong>
 
                   <div className="actions" style={{ marginTop: '10px' }}>
@@ -2287,7 +2325,7 @@ function App() {
             accepted.map(friend => (
               <div className="panel" key={friend.id}>
                 <strong>
-                  <MemberName person={friend} role={memberRoles[friend.id]} />
+                  <MemberName person={friend} role={memberRoles[friend.id]} tierRoles={memberTierRoles[friend.id]} />
                 </strong>
 
                 <button
@@ -2351,7 +2389,7 @@ function App() {
               return <div key={row.user_id} className={`xp-leaderboard-row ${isYou ? 'is-you' : ''}`}>
                 <strong className="xp-rank">#{row.rank}</strong>
                 {row.avatar_url ? <img className="xp-avatar" src={row.avatar_url} alt="" /> : <span className="xp-avatar xp-avatar-fallback">{(row.display_name || row.username || '?').slice(0,1).toUpperCase()}</span>}
-                <div className="xp-member"><strong><ProfileHover supabase={supabase} person={{ id: row.user_id, display_name: row.display_name, username: row.username, avatar_url: row.avatar_url }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]}>{<MemberName person={{ id: row.user_id, display_name: row.display_name, username: row.username }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]} />}</ProfileHover> {isYou && <span className="you-tag">YOU</span>}</strong></div>
+                <div className="xp-member"><strong><ProfileHover supabase={supabase} person={{ id: row.user_id, display_name: row.display_name, username: row.username, avatar_url: row.avatar_url }} role={memberRoles[row.user_id]} tierRoles={memberTierRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]}>{<MemberName person={{ id: row.user_id, display_name: row.display_name, username: row.username }} role={memberRoles[row.user_id]} tierRoles={memberTierRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]} />}</ProfileHover> {isYou && <span className="you-tag">YOU</span>}</strong></div>
                 <div className="xp-member-score"><strong>LEVEL {row.level}</strong><small>{Number(row.xp || 0).toLocaleString()} XP</small></div>
               </div>
             })}</div>}
@@ -2378,7 +2416,7 @@ function App() {
                     }}
                   >
                     <strong>
-                     <MemberName person={sender} role={memberRoles[row.requester]} />
+                     <MemberName person={sender} role={memberRoles[row.requester]} tierRoles={memberTierRoles[row.requester]} />
                    </strong>
 
                     <div className="actions">
@@ -2451,7 +2489,7 @@ function App() {
                     }}
                   >
                     <strong>
-                      <ProfileHover supabase={supabase} person={member} role={memberRoles[member.id]} cosmetics={memberCosmetics[member.id]} />
+                      <ProfileHover supabase={supabase} person={member} role={memberRoles[member.id]} tierRoles={memberTierRoles[member.id]} cosmetics={memberCosmetics[member.id]} />
                     </strong>
 
                     {session && relationshipWith(member.id)?.status !== 'blocked' && (
@@ -2518,6 +2556,15 @@ function App() {
                   <label>Member<select value={ownerRoleTarget} onChange={e => setOwnerRoleTarget(e.target.value)}><option value="">Choose a member…</option>{ownerDirectory.filter(m => m.user_id !== session.user.id).map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.user_id} — {m.role}</option>)}</select></label>
                   <label>Role<select value={ownerRoleChoice} onChange={e => setOwnerRoleChoice(e.target.value)}><option value="co_owner">Co-owner</option><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="member">Remove staff (Member)</option></select></label>
                   <button className="primary" disabled={staffBusy || !ownerRoleTarget} onClick={ownerChangeRole}>Save role</button>
+                </div>
+                <div>
+                  <h4>Assign member tier badges</h4>
+                  <label>Member<select value={tierRoleTarget} onChange={e => { const id = e.target.value; setTierRoleTarget(id); setTierRoleChoices(memberTierRoles[id] || []) }}><option value="">Choose a member…</option>{ownerDirectory.map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.user_id}</option>)}</select></label>
+                  <div className="tier-role-picker">
+                    {['s', 'a', 'b', 'c', 'd'].map(tier => <label key={tier} className="tier-role-option"><input type="checkbox" checked={tierRoleChoices.includes(tier)} disabled={!tierRoleTarget || staffBusy} onChange={e => setTierRoleChoices(current => e.target.checked ? [...current, tier] : current.filter(value => value !== tier))} /><span className={`member-tier-badge tier-${tier}`}>{tier.toUpperCase()}</span><span>{tier.toUpperCase()}-tier</span></label>)}
+                  </div>
+                  <button className="primary" disabled={staffBusy || !tierRoleTarget} onClick={ownerSaveTierRoles}>Save tier badges</button>
+                  <p className="muted">Members can have multiple tier badges. These are labels only and never grant staff permissions or change name colours.</p>
                 </div>
                 <div>
                   <h4>Give a member a custom title</h4>
@@ -2890,6 +2937,7 @@ function App() {
                 <MemberName
                   person={{ display_name: profile?.display_name || 'Not set yet' }}
                   role={staffRole}
+                  tierRoles={memberTierRoles[session.user.id]}
                   cosmetics={memberCosmetics[session.user.id]}
                 />
               </p>
@@ -3353,6 +3401,34 @@ function App() {
             padding: 12px;
           }
         }
+        .member-tier-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 22px;
+          height: 22px;
+          min-width: 22px;
+          border-radius: 6px;
+          margin-left: 4px;
+          font-size: .72rem;
+          line-height: 1;
+          font-weight: 900;
+          color: #111827;
+          border: 1px solid rgba(0,0,0,.18);
+          box-shadow: 0 1px 3px rgba(0,0,0,.24);
+          vertical-align: middle;
+          -webkit-text-fill-color: #111827;
+          background: #e5e7eb;
+        }
+        .member-tier-badge.tier-s { background: #ff8084; }
+        .member-tier-badge.tier-a { background: #ffc184; }
+        .member-tier-badge.tier-b { background: #ffe184; }
+        .member-tier-badge.tier-c { background: #ffff83; }
+        .member-tier-badge.tier-d { background: #b7ff82; }
+        .tier-role-picker { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+        .tier-role-option { display: inline-flex; align-items: center; gap: 5px; font-size: .85rem; }
+        .tier-role-option input { width: auto; }
+
         /* Final Co-owner override: diamond-blue name, badge and glow. */
         .member-role-tag.co_owner {
           color: #082b4a !important;
@@ -3442,6 +3518,7 @@ function App() {
                 <MemberName
                   person={conversation.friend}
                   role={memberRoles[conversation.friend.id]}
+                  tierRoles={memberTierRoles[conversation.friend.id]}
                 />
               </span>
             </button>
@@ -3484,6 +3561,7 @@ function App() {
             <MemberName
               person={{ display_name: profile?.display_name || session.user.email, username: profile?.username }}
               role={memberRoles[session.user.id] || staffRole}
+                                      tierRoles={memberTierRoles[session.user.id]}
             />
           ) : 'Guest'}
 
