@@ -41,17 +41,18 @@ function ChatAvatar({ person, className = 'chat-avatar', presenceStatus = 'offli
 
 function MemberName({ person, role, className = '', cosmetics = null }) {
   const isOwner = role === 'owner'
-  const isStaff = ['owner', 'admin', 'moderator'].includes(role)
+  const isStaff = ['owner', 'co_owner', 'admin', 'moderator'].includes(role)
 
   return (
     <span className={`member-name ${isOwner ? 'owner-name' : ''} ${className}`.trim()}>
       {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
+      {role === 'co_owner' && <span className="co-owner-diamond" aria-label="Co-owner" title="Co-owner">◆</span>}
       {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
       <span>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
       {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
       {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
       {isStaff && !isOwner && (
-        <span className={`member-role-tag ${role}`}>{role}</span>
+        <span className={`member-role-tag ${role}`}>{role === 'co_owner' ? 'Co-owner' : role}</span>
       )}
     </span>
   )
@@ -256,6 +257,8 @@ function App() {
   // Shared clan chat
   const [clanMessages, setClanMessages] = React.useState([])
   const [clanMessageText, setClanMessageText] = React.useState('')
+  const [clanImageFile, setClanImageFile] = React.useState(null)
+  const [uploadingClanImage, setUploadingClanImage] = React.useState(false)
   const [loadingClanChat, setLoadingClanChat] = React.useState(false)
   const [sendingClanMessage, setSendingClanMessage] = React.useState(false)
   const [presenceByUser, setPresenceByUser] = React.useState({})
@@ -280,7 +283,9 @@ function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [suspension, setSuspension] = React.useState(null)
 
-  const isStaff = ['owner', 'admin', 'moderator'].includes(staffRole)
+  const isStaff = ['owner', 'co_owner', 'admin', 'moderator'].includes(staffRole)
+  const canDeleteChatMessages = ['owner', 'co_owner', 'admin', 'moderator'].includes(staffRole)
+  const canDeleteAccounts = ['owner', 'co_owner'].includes(staffRole)
 
   // Realtime presence shared by every signed-in clan member.
   // Hidden tabs or inactive users are marked away; disconnecting removes them.
@@ -871,7 +876,7 @@ function App() {
       setLoadingClanChat(true)
 
       const { data, error } = await supabase.from('clan_chat_messages')
-        .select('id, sender_id, body, created_at')
+        .select('id, sender_id, body, image_url, created_at')
         .order('created_at', { ascending: false })
         .limit(100)
 
@@ -917,7 +922,7 @@ function App() {
     const channel = supabase.channel('rlm-public-clan-chat')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'clan_chat_messages' },
+        { event: '*', schema: 'public', table: 'clan_chat_messages' },
         () => loadClanMessages()
       )
       .subscribe()
@@ -930,31 +935,49 @@ function App() {
 
   async function sendClanMessage(e) {
     e.preventDefault()
-
     const body = clanMessageText.trim()
-
-    if (!body || !session || !supabase) return
-
-    if (body.length > 1000) {
-      return setStatus('Clan chat messages must be 1000 characters or fewer.')
-    }
+    if ((!body && !clanImageFile) || !session || !supabase) return
+    if (body.length > 1000) return setStatus('Clan chat messages must be 1000 characters or fewer.')
 
     setSendingClanMessage(true)
     setStatus('')
-
-    const { error } = await supabase.from('clan_chat_messages')
-      .insert({
-        sender_id: session.user.id,
-        body
-      })
-
-    if (error) {
-      setStatus('Message could not be sent: ' + error.message)
-    } else {
+    try {
+      let image_url = null
+      if (clanImageFile) {
+        if (!clanImageFile.type.startsWith('image/')) throw new Error('Choose an image file.')
+        if (clanImageFile.size > 5 * 1024 * 1024) throw new Error('Images must be 5 MB or smaller.')
+        setUploadingClanImage(true)
+        const extension = (clanImageFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+        const path = `${session.user.id}/${crypto.randomUUID()}.${extension}`
+        const { error: uploadError } = await supabase.storage.from('clan-chat-images').upload(path, clanImageFile, { contentType: clanImageFile.type, upsert: false })
+        if (uploadError) throw uploadError
+        const { data: publicData } = supabase.storage.from('clan-chat-images').getPublicUrl(path)
+        image_url = publicData?.publicUrl || null
+        if (!image_url) throw new Error('Could not create an image URL.')
+      }
+      const { error } = await supabase.from('clan_chat_messages').insert({ sender_id: session.user.id, body: body || '', image_url })
+      if (error) throw error
       setClanMessageText('')
+      setClanImageFile(null)
+      const picker = document.getElementById('clan-image-picker')
+      if (picker) picker.value = ''
+    } catch (error) {
+      setStatus('Message could not be sent: ' + (error?.message || 'Unknown error'))
+    } finally {
+      setUploadingClanImage(false)
+      setSendingClanMessage(false)
     }
+  }
 
-    setSendingClanMessage(false)
+  async function deleteClanMessage(message) {
+    if (!canDeleteChatMessages || !supabase || !message?.id) return
+    if (!window.confirm('Delete this clan chat message?')) return
+    const { error } = await supabase.from('clan_chat_messages').delete().eq('id', message.id)
+    if (error) setStatus('Could not delete message: ' + error.message)
+    else {
+      setClanMessages(current => current.filter(item => item.id !== message.id))
+      setStatus('Message deleted.')
+    }
   }
 
   // Load private messages and subscribe to inserts.
@@ -1069,9 +1092,9 @@ function App() {
   }
 
   async function deleteMemberAccount() {
-    if (!session || !supabase || staffRole !== 'owner' || !deleteTarget) return
-    const target = ownerDirectory.find(member => (member.user_id || member.id) === deleteTarget)
-    if (!target || target.role === 'owner' || deleteTarget === session.user.id) {
+    if (!session || !supabase || !canDeleteAccounts || !deleteTarget) return
+    const target = (staffRole === 'owner' ? ownerDirectory : members.map(member => ({ ...member, user_id: member.id, role: memberRoles[member.id] || 'member' })).concat(ownerDirectory)).find(member => (member.user_id || member.id) === deleteTarget)
+    if (!target || target.role === 'owner' || (staffRole === 'co_owner' && target.role === 'co_owner') || deleteTarget === session.user.id) {
       setStatus('That account cannot be selected for deletion.')
       return
     }
@@ -1095,6 +1118,7 @@ function App() {
       if (data?.error) throw new Error(data.error)
 
       setOwnerDirectory(current => current.filter(member => (member.user_id || member.id) !== deleteTarget))
+      setMembers(current => current.filter(member => member.id !== deleteTarget))
       setStaffMembers(current => current.filter(member => (member.user_id || member.id) !== deleteTarget))
       setDeleteTarget('')
       setDeleteConfirm('')
@@ -1844,14 +1868,19 @@ function App() {
                         </small>
                       </div>
 
-                      <div className="clan-message-body">{message.body}</div>
+                      {message.body && <div className="clan-message-body">{message.body}</div>}
+                      {message.image_url && <a className="clan-chat-image-link" href={message.image_url} target="_blank" rel="noreferrer"><img className="clan-chat-image" src={message.image_url} alt="Image shared in clan chat" loading="lazy" /></a>}
                     </div>
+                    {canDeleteChatMessages && <button type="button" className="chat-delete-message" title="Delete message" aria-label="Delete message" onClick={() => deleteClanMessage(message)}>Delete</button>}
                   </div>
                 ))
               )}
             </div>
 
             <form className="chat-composer" onSubmit={sendClanMessage}>
+              <label className="chat-image-picker" htmlFor="clan-image-picker" title="Attach an image">＋ Image</label>
+              <input id="clan-image-picker" className="visually-hidden-file" type="file" accept="image/*" onChange={e => setClanImageFile(e.target.files?.[0] || null)} />
+              {clanImageFile && <span className="chat-image-selected">{clanImageFile.name} <button type="button" onClick={() => { setClanImageFile(null); const el=document.getElementById('clan-image-picker'); if(el) el.value='' }}>×</button></span>}
               <input
                 aria-label="Message the 尺ḼⱮ clan"
                 maxLength="1000"
@@ -1863,7 +1892,7 @@ function App() {
               <button
                 className="chat-send-button"
                 type="submit"
-                disabled={sendingClanMessage || !clanMessageText.trim()}
+                disabled={sendingClanMessage || uploadingClanImage || (!clanMessageText.trim() && !clanImageFile)}
                 aria-label="Send to clan"
                 title="Send to clan"
               >
@@ -2159,7 +2188,7 @@ function App() {
         <div className="panel">
           <h2>🛡 Staff Control Panel</h2>
           <p className="muted">
-            Manage 尺ḼⱮ member restrictions and review active moderation actions.
+            Manage 尺ḼⱮ member restrictions, chat moderation, and review active moderation actions.
           </p>
 
           <div className="panel">
@@ -2179,7 +2208,7 @@ function App() {
                 <div>
                   <h4>Grant or change staff role</h4>
                   <label>Member<select value={ownerRoleTarget} onChange={e => setOwnerRoleTarget(e.target.value)}><option value="">Choose a member…</option>{ownerDirectory.filter(m => m.user_id !== session.user.id).map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.user_id} — {m.role}</option>)}</select></label>
-                  <label>Role<select value={ownerRoleChoice} onChange={e => setOwnerRoleChoice(e.target.value)}><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="member">Remove staff (Member)</option></select></label>
+                  <label>Role<select value={ownerRoleChoice} onChange={e => setOwnerRoleChoice(e.target.value)}><option value="co_owner">Co-owner</option><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="member">Remove staff (Member)</option></select></label>
                   <button className="primary" disabled={staffBusy || !ownerRoleTarget} onClick={ownerChangeRole}>Save role</button>
                 </div>
                 <div>
@@ -2193,16 +2222,16 @@ function App() {
             </div>
           )}
 
-          {staffRole === 'owner' && (
+          {canDeleteAccounts && (
             <div className="panel owner-tools-panel">
               <h3>🛡 Delete a member account</h3>
-              <p className="muted">Permanently delete a selected non-owner account. Your own account and other owner accounts are excluded. The Edge Function must verify the owner role again on the server.</p>
+              <p className="muted">Permanently delete an eligible member account. Your own account and owner accounts are excluded; co-owners cannot delete other co-owners. The Edge Function must verify the owner or co-owner role and target restrictions again on the server.</p>
               <label>
                 Member to delete
                 <select value={deleteTarget} onChange={e => { setDeleteTarget(e.target.value); setDeleteConfirm(''); setShowDeleteConfirm(false) }}>
                   <option value="">Choose a member…</option>
-                  {ownerDirectory
-                    .filter(member => (member.user_id || member.id) !== session.user.id && member.role !== 'owner')
+                  {(staffRole === 'owner' ? ownerDirectory : members.map(member => ({ ...member, user_id: member.id, role: memberRoles[member.id] || 'member' })))
+                    .filter(member => (member.user_id || member.id) !== session.user.id && member.role !== 'owner' && (staffRole !== 'co_owner' || member.role !== 'co_owner'))
                     .map(member => {
                       const memberId = member.user_id || member.id
                       return <option key={memberId} value={memberId}>{member.display_name || member.username || memberId} — {member.role || 'member'}</option>
@@ -2665,7 +2694,27 @@ function App() {
         .profile-hover-heading small { color:#b99cff; }
         .profile-hover-title { color:#ffd447; font-weight:800; }
         .progress-summary { display:flex; flex-wrap:wrap; gap:14px; padding:12px; margin:12px 0; border-radius:10px; background:rgba(130,90,220,.12); }
+        .co-owner-diamond { display:inline-flex; align-items:center; justify-content:center; color:#55dfff; font-size:1.05em; line-height:1; -webkit-text-fill-color:#55dfff; text-shadow:0 0 4px #42d8ff,0 0 9px rgba(40,190,255,.95),0 0 17px rgba(25,130,255,.8); filter:drop-shadow(0 0 4px rgba(70,210,255,.9)); }
+        .member-name:has(.co-owner-diamond) { color:#9ceeff; text-shadow:0 0 5px rgba(40,190,255,.55),0 0 12px rgba(40,130,255,.4); }
+        .member-role-tag.co_owner { color:#8feaff; background:rgba(35,180,255,.16); border-color:rgba(75,205,255,.65); }
+        .clan-message-row { position:relative; }
+        .chat-delete-message { margin-left:auto; border:1px solid rgba(255,100,100,.3); background:rgba(210,60,70,.1); color:#ff9da4; border-radius:7px; padding:4px 8px; font-size:11px; cursor:pointer; }
+        .clan-chat-image { display:block; max-width:min(360px,100%); max-height:280px; object-fit:contain; margin-top:8px; border-radius:10px; border:1px solid rgba(160,140,200,.3); }
+        .chat-image-picker { display:inline-flex; align-items:center; justify-content:center; padding:8px 10px; border:1px solid rgba(160,140,200,.35); border-radius:9px; color:inherit; cursor:pointer; white-space:nowrap; }
+        .visually-hidden-file { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+        .chat-image-selected { font-size:11px; color:inherit; }
+        .chat-image-selected button { border:0; background:transparent; color:inherit; cursor:pointer; }
         .minigames-wrap { margin-top:16px; }
+        .minigames-wrap, .minigames-wrap .game-panel, .minigames-wrap .panel { color:#f3efff !important; background-color:#171421 !important; border-color:#403451 !important; }
+        .minigames-wrap .tic-cell, .minigames-wrap .reaction-display { background:#211b30 !important; color:#f7f2ff !important; border-color:#66518b !important; }
+        .rlm-extra-games .panel { background:#171421 !important; color:#f3efff !important; border-color:#403451 !important; }
+        .rlm-extra-games .panel h3, .rlm-extra-games .panel h4, .rlm-extra-games .panel strong { color:#f7f2ff !important; }
+        .rlm-extra-games .panel p, .rlm-extra-games .panel small, .rlm-extra-games .muted { color:#c9bfd8 !important; }
+        .rlm-extra-games .tic-cell { background:#211b30 !important; color:#f7f2ff !important; border-color:#66518b !important; }
+        .rlm-extra-games input, .rlm-extra-games select { background:#211b30 !important; color:#f7f2ff !important; border-color:#66518b !important; }
+        .minigames-wrap button { color:inherit; }
+        .minigames-wrap .muted, .minigames-wrap p { color:#c9bfd8; }
+
         .game-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
         .game-panel { text-align:center; }
         .tic-board { display:grid; grid-template-columns:repeat(3, minmax(65px, 90px)); justify-content:center; gap:7px; margin:18px auto; }
