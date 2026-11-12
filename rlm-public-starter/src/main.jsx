@@ -9,6 +9,8 @@ const url = import.meta.env.VITE_SUPABASE_URL
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = url && anon ? createClient(url, anon) : null
 
+const STAFF_NAME_COLORS = ['#38bdf8', '#22c55e', '#a78bfa', '#f472b6', '#f97316', '#facc15', '#ef4444', '#14b8a6', '#6366f1', '#e879f9', '#f8fafc', '#94a3b8']
+
 const menu = [
   ['Home', '⌂'], ['Messages', '✉'], ['Clan Chat', '💬'], ['Friends', '♙'],
   ['Minigames', '🎮'], ['Leaderboard', '🏆'], ['Quests', '✦'],
@@ -51,8 +53,11 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
       <span>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
       {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
       {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
-      {isStaff && !isOwner && (
-        <span className={`member-role-tag ${role}`}>{role === 'co_owner' ? 'Co-owner' : role}</span>
+      {isStaff && (
+        <span
+          className={`member-role-tag ${role}`}
+          style={cosmetics?.staff_name_color ? { '--staff-name-color': cosmetics.staff_name_color } : undefined}
+        >{role === 'co_owner' ? 'Co-owner' : role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : 'Admin'}</span>
       )}
     </span>
   )
@@ -82,7 +87,10 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
   }
 
   return (
-    <span className="profile-hover-wrap"
+    <span className="profile-hover-wrap" role="button" tabIndex={0}
+      aria-label={`View ${person?.display_name || person?.username || 'member'} profile`}
+      onClick={(event) => { event.stopPropagation(); showProfile(event) }}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showProfile(event) } }}
       onMouseEnter={(event) => { clearTimeout(timer.current); showProfile(event) }}
       onMouseLeave={() => { timer.current = setTimeout(() => setOpen(false), 180) }}
       onFocus={showProfile}
@@ -92,8 +100,9 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
       {open && (
         <span className="profile-hover-card" role="status" style={{ top: cardPosition.top, left: cardPosition.left }}>
           <span className="profile-hover-heading">
-            <strong>{person?.display_name || person?.username || '尺ḼⱮ member'}</strong>
-            {role && <small>{role.toUpperCase()}</small>}
+            {person?.avatar_url && <img src={person.avatar_url} alt="" className="profile-hover-avatar" />}
+            <span><strong>{person?.display_name || person?.username || '尺ḼⱮ member'}</strong>{person?.username && <small>@{person.username}</small>}</span>
+            {role && <small>{role === 'co_owner' ? 'CO-OWNER' : role.toUpperCase()}</small>}
           </span>
           {loading ? <span className="muted">Loading stats…</span> : failed ? <span className="muted">Profile stats unavailable. Run the progression SQL migration.</span> : stats ? (
             <>
@@ -234,6 +243,8 @@ function App() {
   const [friendshipBusy, setFriendshipBusy] = React.useState('')
   const [memberRoles, setMemberRoles] = React.useState({})
   const [memberCosmetics, setMemberCosmetics] = React.useState({})
+  const [selectedStaffNameColor, setSelectedStaffNameColor] = React.useState('#38bdf8')
+  const [savingStaffNameColor, setSavingStaffNameColor] = React.useState(false)
   const [progressData, setProgressData] = React.useState(null)
   const [progressLoading, setProgressLoading] = React.useState(false)
   const [progressBusy, setProgressBusy] = React.useState(false)
@@ -496,10 +507,20 @@ function App() {
     let cancelled = false
     async function loadCosmetics() {
       if (!session || !supabase) { setMemberCosmetics({}); return }
-      const { data, error } = await supabase.rpc('rlm_get_public_member_cosmetics')
+      const [{ data, error }, { data: roleColors, error: colorError }] = await Promise.all([
+        supabase.rpc('rlm_get_public_member_cosmetics'),
+        supabase.rpc('rlm_get_public_staff_name_colors')
+      ])
       if (cancelled) return
       if (error) { setStatus('Could not load member cosmetics: ' + error.message); return }
-      setMemberCosmetics(Object.fromEntries((data || []).map(row => [row.user_id, row])))
+      if (colorError) { setStatus('Could not load staff name colours. Run the staff name colour migration.'); }
+      const cosmeticsByUser = Object.fromEntries((data || []).map(row => [row.user_id, row]))
+      ;(roleColors || []).forEach(row => {
+        cosmeticsByUser[row.user_id] = { ...(cosmeticsByUser[row.user_id] || {}), staff_name_color: row.color }
+      })
+      setMemberCosmetics(cosmeticsByUser)
+      const myColor = (roleColors || []).find(row => row.user_id === session.user.id)?.color
+      if (myColor && STAFF_NAME_COLORS.includes(myColor)) setSelectedStaffNameColor(myColor)
     }
     loadCosmetics()
     return () => { cancelled = true }
@@ -584,6 +605,20 @@ function App() {
       setStatus('Cosmetic equipped!')
     }
     setProgressBusy(false)
+  }
+
+  async function saveStaffNameColor(color) {
+    if (!['owner', 'co_owner', 'admin'].includes(staffRole) || !STAFF_NAME_COLORS.includes(color) || !supabase) return
+    setSelectedStaffNameColor(color)
+    setSavingStaffNameColor(true)
+    const { error } = await supabase.rpc('rlm_set_my_staff_name_color', { p_color: color })
+    if (error) {
+      setStatus('Could not save your name colour: ' + error.message + '. Run the staff name colour migration first.')
+    } else {
+      setMemberCosmetics(current => ({ ...current, [session.user.id]: { ...(current[session.user.id] || {}), staff_name_color: color } }))
+      setStatus('Your staff name colour has been updated.')
+    }
+    setSavingStaffNameColor(false)
   }
 
   async function ownerChangeRole() {
@@ -1674,11 +1709,7 @@ function App() {
                   >
                     <ChatAvatar person={conversation.friend} presenceStatus={presenceStatus(conversation.friend?.id)} />
                     <span className="chat-conversation-name">
-                      <MemberName
-                        person={conversation.friend}
-                        role={memberRoles[conversation.friend.id]}
-                        cosmetics={memberCosmetics[conversation.friend.id]}
-                      />
+                      <ProfileHover supabase={supabase} person={conversation.friend} role={memberRoles[conversation.friend.id]} cosmetics={memberCosmetics[conversation.friend.id]} />
                     </span>
                   </button>
                 ))
@@ -1692,10 +1723,7 @@ function App() {
                     <ChatAvatar person={selectedFriend} />
                     <div>
                       <strong>
-                        <MemberName
-                          person={selectedFriend}
-                          role={memberRoles[selectedFriend?.id]}
-                        />
+                        <ProfileHover supabase={supabase} person={selectedFriend} role={memberRoles[selectedFriend?.id]} cosmetics={memberCosmetics[selectedFriend?.id]} />
                       </strong>
                       <small>Private conversation</small>
                     </div>
@@ -2038,7 +2066,7 @@ function App() {
               return <div key={row.user_id} className={`xp-leaderboard-row ${isYou ? 'is-you' : ''}`}>
                 <strong className="xp-rank">#{row.rank}</strong>
                 {row.avatar_url ? <img className="xp-avatar" src={row.avatar_url} alt="" /> : <span className="xp-avatar xp-avatar-fallback">{(row.display_name || row.username || '?').slice(0,1).toUpperCase()}</span>}
-                <div className="xp-member"><strong>{row.display_name || row.username || '尺ḼⱮ member'} {isYou && <span className="you-tag">YOU</span>}</strong><small>@{row.username || 'member'}</small></div>
+                <div className="xp-member"><strong><ProfileHover supabase={supabase} person={{ id: row.user_id, display_name: row.display_name, username: row.username, avatar_url: row.avatar_url }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]}>{<MemberName person={{ id: row.user_id, display_name: row.display_name, username: row.username }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]} />}</ProfileHover> {isYou && <span className="you-tag">YOU</span>}</strong><small>@{row.username || 'member'}</small></div>
                 <div className="xp-member-score"><strong>LEVEL {row.level}</strong><small>{Number(row.xp || 0).toLocaleString()} XP</small></div>
               </div>
             })}</div>}
@@ -2580,6 +2608,19 @@ function App() {
               </p>
               <p><strong>尺ḼⱮ role:</strong> {staffRole}</p>
 
+              {['owner', 'co_owner', 'admin'].includes(staffRole) && (
+                <section className="profile-staff-colour-section">
+                  <h3>Staff name tag colour</h3>
+                  <p className="muted">Choose the colour of your {staffRole === 'co_owner' ? 'Co-owner' : staffRole === 'owner' ? 'Owner' : 'Admin'} tag. Admin tags stay a solid colour; Owner and Co-owner tags keep their animated sheen.</p>
+                  <div className="staff-name-color-grid" aria-label="Choose staff name tag colour">
+                    {STAFF_NAME_COLORS.map(color => (
+                      <button key={color} type="button" className={`staff-name-color-swatch${selectedStaffNameColor === color ? ' selected' : ''}`} style={{ '--swatch-color': color }} aria-label={`Choose ${color}`} aria-pressed={selectedStaffNameColor === color} disabled={savingStaffNameColor} onClick={() => saveStaffNameColor(color)} />
+                    ))}
+                  </div>
+                  <div className="staff-name-color-preview">Preview: <span className={`member-role-tag ${staffRole}`} style={{ '--staff-name-color': selectedStaffNameColor }}>{staffRole === 'co_owner' ? 'Co-owner' : staffRole === 'owner' ? 'Owner' : 'Admin'}</span></div>
+                </section>
+              )}
+
               <label>
                 Change your display name
                 <input
@@ -2670,6 +2711,28 @@ function App() {
           border-color: rgba(225, 151, 55, 0.3);
         }
 
+        .member-role-tag.owner, .member-role-tag.co_owner, .member-role-tag.admin {
+          color: #07111f;
+          background: var(--staff-name-color, #38bdf8);
+          border: 1px solid var(--staff-name-color, #38bdf8);
+          font-weight: 950;
+          text-shadow: none;
+          box-shadow: 0 1px 3px rgba(0,0,0,.28);
+        }
+        .member-role-tag.owner, .member-role-tag.co_owner {
+          background: linear-gradient(110deg, var(--staff-name-color, #38bdf8), color-mix(in srgb, var(--staff-name-color, #38bdf8), white 42%), var(--staff-name-color, #38bdf8));
+          background-size: 220% 100%;
+          animation: staffTagShine 3.5s ease-in-out infinite;
+        }
+        .member-role-tag.admin { animation: none !important; background: var(--staff-name-color, #f97316); }
+        @keyframes staffTagShine { 0%,100% { background-position: 0% center; } 50% { background-position: 100% center; } }
+        .staff-name-color-grid { display:grid; grid-template-columns:repeat(6, minmax(34px, 44px)); gap:10px; margin:12px 0; }
+        .staff-name-color-swatch { width:38px; height:38px; border-radius:10px; border:2px solid rgba(255,255,255,.35); background:var(--swatch-color); cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); }
+        .staff-name-color-swatch.selected { outline:3px solid #fff; outline-offset:2px; transform:scale(1.06); }
+        .staff-name-color-swatch:disabled { opacity:.65; cursor:wait; }
+        .staff-name-color-preview { display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:700; }
+        @media (prefers-reduced-motion: reduce) { .member-role-tag.owner, .member-role-tag.co_owner { animation:none; } }
+
         @keyframes ownerShine {
           to { background-position: 220% center; }
         }
@@ -2688,15 +2751,21 @@ function App() {
         .tag-gold { color:#ffd447; background:rgba(255,200,45,.12); border:1px solid rgba(255,200,45,.45); }
         .tag-cyber { color:#e2a8ff; background:rgba(190,80,255,.13); border:1px solid rgba(190,80,255,.45); }
         .equipped-badge { font-size:.95em; -webkit-text-fill-color:initial; }
+        .profile-hover-wrap { cursor:pointer; }
+        .profile-hover-wrap:focus-visible { outline:2px solid #a78bfa; outline-offset:3px; border-radius:4px; }
+        .profile-staff-colour-section { margin:18px 0; padding:14px; border:1px solid rgba(160,140,200,.28); border-radius:12px; }
         .profile-hover-wrap { position:relative; display:inline-flex; cursor:pointer; }
+        .profile-hover-avatar { width:34px; height:34px; border-radius:50%; object-fit:cover; flex:0 0 34px; }
+        .profile-hover-heading { display:flex; align-items:center; gap:8px; }
         .profile-hover-card { position:fixed; z-index:1000; left:0; top:calc(100% + 8px); width:220px; display:flex; flex-direction:column; gap:7px; padding:12px; border-radius:12px; background:#19152a; border:1px solid rgba(170,140,255,.38); box-shadow:0 12px 35px rgba(0,0,0,.4); color:#f5f1ff; font-size:12px; font-weight:500; white-space:normal; }
         .profile-hover-heading { display:flex; justify-content:space-between; gap:8px; align-items:center; border-bottom:1px solid rgba(255,255,255,.12); padding-bottom:7px; }
         .profile-hover-heading small { color:#b99cff; }
         .profile-hover-title { color:#ffd447; font-weight:800; }
         .progress-summary { display:flex; flex-wrap:wrap; gap:14px; padding:12px; margin:12px 0; border-radius:10px; background:rgba(130,90,220,.12); }
-        .co-owner-diamond { display:inline-flex; align-items:center; justify-content:center; color:#55dfff; font-size:1.05em; line-height:1; -webkit-text-fill-color:#55dfff; text-shadow:0 0 4px #42d8ff,0 0 9px rgba(40,190,255,.95),0 0 17px rgba(25,130,255,.8); filter:drop-shadow(0 0 4px rgba(70,210,255,.9)); }
-        .member-name:has(.co-owner-diamond) { color:#9ceeff; text-shadow:0 0 5px rgba(40,190,255,.55),0 0 12px rgba(40,130,255,.4); }
-        .member-role-tag.co_owner { color:#8feaff; background:rgba(35,180,255,.16); border-color:rgba(75,205,255,.65); }
+        .co-owner-diamond { display:inline-flex; align-items:center; justify-content:center; color:#38cfff; font-size:1.08em; line-height:1; font-weight:900; -webkit-text-fill-color:#38cfff; text-shadow:0 1px 1px rgba(0,35,65,.9); filter:none; }
+        .member-name:has(.co-owner-diamond) { color:#65dcff; font-weight:800; text-shadow:none; -webkit-text-stroke:.15px rgba(0,35,65,.7); }
+        .member-name:has(.co-owner-diamond) .member-role-tag.co_owner { color:#eafaff; background:#087eae; border:1px solid #42d4ff; border-radius:5px; padding:2px 6px; font-weight:900; text-shadow:none; box-shadow:0 0 0 1px rgba(0,35,65,.45); }
+        .member-name:has(.co-owner-diamond) .member-role-tag.co_owner { background:linear-gradient(110deg,var(--staff-name-color,#38bdf8),color-mix(in srgb,var(--staff-name-color,#38bdf8),white 42%),var(--staff-name-color,#38bdf8)); background-size:220% 100%; border-color:var(--staff-name-color,#38bdf8); animation:staffTagShine 3.5s ease-in-out infinite; }
         .clan-message-row { position:relative; }
         .chat-delete-message { margin-left:auto; border:1px solid rgba(255,100,100,.3); background:rgba(210,60,70,.1); color:#ff9da4; border-radius:7px; padding:4px 8px; font-size:11px; cursor:pointer; }
         .clan-chat-image { display:block; max-width:min(360px,100%); max-height:280px; object-fit:contain; margin-top:8px; border-radius:10px; border:1px solid rgba(160,140,200,.3); }
