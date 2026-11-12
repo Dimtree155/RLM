@@ -47,18 +47,21 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
 
   return (
     <span className={`member-name ${isOwner ? 'owner-name' : ''} ${role === 'co_owner' ? 'co-owner-name' : ''} ${className}`.trim()}>
-      {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
-      {role === 'co_owner' && <span className="co-owner-diamond" aria-label="Co-owner" title="Co-owner">◆</span>}
-      {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
-      <span className="member-display-name" style={cosmetics?.display_name_color ? { '--display-name-color': cosmetics.display_name_color } : undefined}>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
-      {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
-      {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
-      {isStaff && (
-        <span
-          className={`member-role-tag ${role}`}
-          style={cosmetics?.staff_name_color ? { '--staff-name-color': cosmetics.staff_name_color } : undefined}
-        >{role === 'co_owner' ? 'Co-owner' : role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : 'Admin'}</span>
-      )}
+      <span className="member-name-main">
+        {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
+        {role === 'co_owner' && <span className="co-owner-diamond" aria-label="Co-owner" title="Co-owner"><span className="co-owner-diamond-shape" /></span>}
+        {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
+        <span className="member-display-name" style={cosmetics?.display_name_color ? { '--display-name-color': cosmetics.display_name_color } : undefined}>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
+        {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
+        {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
+        {isStaff && (
+          <span
+            className={`member-role-tag ${role}`}
+            style={cosmetics?.staff_name_color ? { '--staff-name-color': cosmetics.staff_name_color } : undefined}
+          >{role === 'co_owner' ? 'Co-owner' : role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : 'Admin'}</span>
+        )}
+      </span>
+      {person?.username && <span className="member-username">@{person.username}</span>}
     </span>
   )
 }
@@ -101,7 +104,7 @@ function ProfileHover({ person, role, cosmetics, supabase, children }) {
         <span className="profile-hover-card" role="status" style={{ top: cardPosition.top, left: cardPosition.left }}>
           <span className="profile-hover-heading">
             {person?.avatar_url && <img src={person.avatar_url} alt="" className="profile-hover-avatar" />}
-            <span><strong>{person?.display_name || person?.username || '尺ḼⱮ member'}</strong>{person?.username && <small>@{person.username}</small>}</span>
+            <span><strong>{person?.display_name || person?.username || '尺ḼⱮ member'}</strong></span>
             {role && <small>{role === 'co_owner' ? 'CO-OWNER' : role.toUpperCase()}</small>}
           </span>
           {loading ? <span className="muted">Loading stats…</span> : failed ? <span className="muted">Profile stats unavailable. Run the progression SQL migration.</span> : stats ? (
@@ -416,6 +419,9 @@ function App() {
   const [email, setEmail] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [signupDisplayName, setSignupDisplayName] = React.useState('')
+  const [signupUsername, setSignupUsername] = React.useState('')
+  const [ownerUsernameTarget, setOwnerUsernameTarget] = React.useState('')
+  const [ownerUsernameValue, setOwnerUsernameValue] = React.useState('')
   const [status, setStatus] = React.useState('')
   const [section, setSection] = React.useState('Home')
 
@@ -614,12 +620,28 @@ function App() {
       .select('username, display_name, avatar_url, created_at')
       .eq('id', session.user.id)
       .maybeSingle()
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (error) {
           setStatus(error.message)
         } else {
-          setProfile(data)
-          setNewDisplayName(data?.display_name || '')
+          const metadataUsername = session.user.user_metadata?.username
+          if (!data?.username && metadataUsername) {
+            const { data: updatedProfile, error: updateError } = await supabase.from('profiles')
+              .update({ username: metadataUsername })
+              .eq('id', session.user.id)
+              .select('username, display_name, avatar_url, created_at')
+              .maybeSingle()
+            if (!updateError && updatedProfile) {
+              setProfile(updatedProfile)
+              setNewDisplayName(updatedProfile.display_name || '')
+            } else {
+              setProfile(data)
+              setNewDisplayName(data?.display_name || '')
+            }
+          } else {
+            setProfile(data)
+            setNewDisplayName(data?.display_name || '')
+          }
         }
       })
   }, [session])
@@ -1472,6 +1494,11 @@ function App() {
     }
 
     const cleanDisplayName = signupDisplayName.trim()
+    const cleanUsername = signupUsername.trim().toLowerCase()
+
+    if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      return setStatus('Choose a username of 3–20 characters using only letters, numbers, and underscores.')
+    }
 
     if (!cleanDisplayName || cleanDisplayName.length > 24) {
       return setStatus('Choose a display name between 1 and 24 characters.')
@@ -1481,7 +1508,7 @@ function App() {
       email,
       password,
       options: {
-        data: { display_name: cleanDisplayName }
+        data: { display_name: cleanDisplayName, username: cleanUsername }
       }
     })
 
@@ -1491,14 +1518,15 @@ function App() {
       const { error: profileError } = await supabase.from('profiles')
         .upsert({
           id: data.user.id,
-          display_name: cleanDisplayName
+          display_name: cleanDisplayName,
+          username: cleanUsername
         }, {
           onConflict: 'id'
         })
 
       setStatus(
         profileError
-          ? 'Account created, but the display name could not be saved: ' + profileError.message
+          ? 'Account created, but the profile could not be saved: ' + profileError.message
           : 'Account created! Welcome to 尺ḼⱮ.'
       )
     } else {
@@ -1533,6 +1561,29 @@ function App() {
     setConversations([])
     setStaffRole('member')
     setSuspension(null)
+  }
+
+  async function ownerSetUsername() {
+    const cleanUsername = ownerUsernameValue.trim().toLowerCase()
+    if (!ownerUsernameTarget || !/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+      setStatus('Choose a username of 3–20 characters using only letters, numbers, and underscores.')
+      return
+    }
+    setStaffBusy(true)
+    const { error } = await supabase.rpc('rlm_owner_set_member_username', {
+      p_user_id: ownerUsernameTarget,
+      p_username: cleanUsername
+    })
+    if (error) {
+      setStatus('Could not change username: ' + error.message)
+    } else {
+      setStatus('Member username updated.')
+      setOwnerUsernameTarget('')
+      setOwnerUsernameValue('')
+      await refreshStaffData()
+      await refreshDirectory()
+    }
+    setStaffBusy(false)
   }
 
   async function saveDisplayName() {
@@ -1802,6 +1853,20 @@ function App() {
               <p className="muted">Join the 尺ḼⱮ community.</p>
 
               <form onSubmit={signIn}>
+                <label>
+                  Username (required for new accounts)
+                  <input
+                    type="text"
+                    maxLength="20"
+                    minLength="3"
+                    placeholder="e.g. player_one"
+                    value={signupUsername}
+                    onChange={e => setSignupUsername(e.target.value)}
+                    autoComplete="username"
+                  />
+                  <small className="muted">3–20 characters: letters, numbers, and underscores. Choose this when creating your account.</small>
+                </label>
+
                 <label>
                   Display name (for new accounts)
                   <input
@@ -2286,7 +2351,7 @@ function App() {
               return <div key={row.user_id} className={`xp-leaderboard-row ${isYou ? 'is-you' : ''}`}>
                 <strong className="xp-rank">#{row.rank}</strong>
                 {row.avatar_url ? <img className="xp-avatar" src={row.avatar_url} alt="" /> : <span className="xp-avatar xp-avatar-fallback">{(row.display_name || row.username || '?').slice(0,1).toUpperCase()}</span>}
-                <div className="xp-member"><strong><ProfileHover supabase={supabase} person={{ id: row.user_id, display_name: row.display_name, username: row.username, avatar_url: row.avatar_url }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]}>{<MemberName person={{ id: row.user_id, display_name: row.display_name, username: row.username }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]} />}</ProfileHover> {isYou && <span className="you-tag">YOU</span>}</strong><small>@{row.username || 'member'}</small></div>
+                <div className="xp-member"><strong><ProfileHover supabase={supabase} person={{ id: row.user_id, display_name: row.display_name, username: row.username, avatar_url: row.avatar_url }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]}>{<MemberName person={{ id: row.user_id, display_name: row.display_name, username: row.username }} role={memberRoles[row.user_id]} cosmetics={memberCosmetics[row.user_id]} />}</ProfileHover> {isYou && <span className="you-tag">YOU</span>}</strong></div>
                 <div className="xp-member-score"><strong>LEVEL {row.level}</strong><small>{Number(row.xp || 0).toLocaleString()} XP</small></div>
               </div>
             })}</div>}
@@ -2402,11 +2467,6 @@ function App() {
                     )}
                   </div>
 
-                  {member.username && (
-                    <div className="muted" style={{ fontSize: '0.9em' }}>
-                      @{member.username}
-                    </div>
-                  )}
                 </div>
 
                 <div className="actions">
@@ -2465,6 +2525,13 @@ function App() {
                   <label>Title<input maxLength={32} value={titleValue} onChange={e => setTitleValue(e.target.value)} placeholder="e.g. Clan Legend" /></label>
                   <button className="primary" disabled={staffBusy || !titleTarget || !titleValue.trim()} onClick={ownerGrantTitle}>Grant title</button>
                   <p className="muted">Only the owner can grant titles or change staff roles.</p>
+                </div>
+                <div>
+                  <h4>Change a member username</h4>
+                  <label>Member<select value={ownerUsernameTarget} onChange={e => { setOwnerUsernameTarget(e.target.value); const selected = ownerDirectory.find(m => m.user_id === e.target.value); setOwnerUsernameValue(selected?.username || '') }}><option value="">Choose a member…</option>{ownerDirectory.map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.user_id} — @{m.username || 'no username'}</option>)}</select></label>
+                  <label>New username<input maxLength={20} minLength={3} value={ownerUsernameValue} onChange={e => setOwnerUsernameValue(e.target.value)} placeholder="new_username" /></label>
+                  <button className="primary" disabled={staffBusy || !ownerUsernameTarget || !ownerUsernameValue.trim()} onClick={ownerSetUsername}>Save username</button>
+                  <p className="muted">Usernames must be unique and use 3–20 letters, numbers, or underscores.</p>
                 </div>
               </div>
             </div>
@@ -2555,7 +2622,7 @@ function App() {
                     .map(member => (
                       <option key={member.id} value={member.id}>
                         {member.display_name || member.username || '尺ḼⱮ member'}
-                        {member.username ? ` (@${member.username})` : ''}
+                        
                         {member.role ? ` — ${member.role}` : ''}
                       </option>
                     ))}
@@ -2896,9 +2963,28 @@ function App() {
       <style>{`
         .member-name {
           display: inline-flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 1px;
+          font-weight: 650;
+          vertical-align: middle;
+        }
+        .member-name-main {
+          display: inline-flex;
           align-items: center;
           gap: 5px;
-          font-weight: 650;
+          min-width: 0;
+        }
+        .member-username {
+          display: block;
+          padding-left: 1px;
+          color: var(--muted, #94a3b8);
+          -webkit-text-fill-color: var(--muted, #94a3b8);
+          background: none !important;
+          font-size: .76em;
+          font-weight: 500;
+          line-height: 1.2;
+          letter-spacing: .01em;
         }
 
         .member-display-name { color: var(--display-name-color, inherit) !important; -webkit-text-fill-color: var(--display-name-color, currentColor) !important; background: none !important; filter: none; text-shadow: none; }
@@ -2952,37 +3038,69 @@ function App() {
           text-shadow: none;
           box-shadow: 0 1px 3px rgba(0,0,0,.28);
         }
-        .member-role-tag.owner, .member-role-tag.co_owner {
-          color: #4a2b00;
-          background: linear-gradient(110deg, #9b6500 0%, #f6cf58 18%, #fff2b0 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%);
-          background-size: 260% 100%;
-          border: 1px solid #f5cf65;
-          box-shadow: 0 0 5px rgba(255, 198, 48, .55), inset 0 1px 0 rgba(255,255,255,.55);
-          animation: goldBannerShine 3s linear infinite;
+        /* Owner stays gold; Co-owner uses the blue diamond treatment. */
+        .member-role-tag.owner {
+          color: #4a2b00 !important;
+          -webkit-text-fill-color: #4a2b00 !important;
+          background: linear-gradient(110deg, #9b6500 0%, #f6cf58 18%, #fff2b0 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%) !important;
+          background-size: 260% 100% !important;
+          border: 1px solid #f5cf65 !important;
+          box-shadow: 0 0 5px rgba(255, 198, 48, .7), inset 0 1px 0 rgba(255,255,255,.65) !important;
+          animation: goldBannerShine 3s linear infinite !important;
         }
+        .member-role-tag.co_owner {
+          color: #082b4a !important;
+          -webkit-text-fill-color: #082b4a !important;
+          background: linear-gradient(110deg, #075985 0%, #38bdf8 18%, #dff6ff 34%, #0ea5e9 52%, #bae6fd 70%, #0369a1 88%, #38bdf8 100%) !important;
+          background-size: 260% 100% !important;
+          border: 1px solid #7dd3fc !important;
+          box-shadow: 0 0 8px rgba(56, 189, 248, .9), 0 0 15px rgba(14, 165, 233, .48), inset 0 1px 0 rgba(255,255,255,.72) !important;
+          animation: diamondBannerShine 3s linear infinite !important;
+        }
+        @keyframes diamondBannerShine { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
         .member-role-tag.admin { animation: none !important; background: var(--staff-name-color, #f97316); }
         @keyframes goldBannerShine { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
         .member-name.owner-name .member-display-name,
         .member-name.co-owner-name .member-display-name {
-          color: #f6cf58 !important;
-          background: linear-gradient(100deg, #9b6500 0%, #f6cf58 18%, #fff5c2 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%) !important;
           background-size: 260% auto !important;
           background-clip: text !important;
           -webkit-background-clip: text !important;
           -webkit-text-fill-color: transparent !important;
-          animation: goldNameMorph 3.4s linear infinite;
           font-weight: 950;
-          filter: drop-shadow(0 0 4px rgba(255, 190, 35, .42));
         }
-        .owner-crown, .co-owner-diamond {
+        .member-name.owner-name .member-display-name {
           color: #f6cf58 !important;
-          background: linear-gradient(120deg, #9b6500, #f6cf58, #fff5c2, #d99a16, #fff0a0, #b77908, #f6cf58);
+          background: linear-gradient(100deg, #9b6500 0%, #f6cf58 18%, #fff5c2 34%, #d99a16 52%, #fff0a0 70%, #b77908 88%, #f6cf58 100%) !important;
+          animation: goldNameMorph 3.4s linear infinite !important;
+          filter: drop-shadow(0 0 4px rgba(255, 190, 35, .55));
+        }
+        .member-name.co-owner-name .member-display-name {
+          color: #38bdf8 !important;
+          background: linear-gradient(100deg, #075985 0%, #38bdf8 18%, #e0f7ff 34%, #0ea5e9 52%, #bae6fd 70%, #0369a1 88%, #38bdf8 100%) !important;
+          animation: diamondNameShine 3.4s linear infinite !important;
+          filter: drop-shadow(0 0 5px rgba(56, 189, 248, .85));
+        }
+        @keyframes diamondNameShine { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
+        .owner-crown, .co-owner-diamond {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent !important;
+        }
+        .owner-crown { color: #f6cf58 !important; filter: drop-shadow(0 0 5px rgba(255, 190, 35, .75)); }
+        .co-owner-diamond { color: #38bdf8 !important; filter: drop-shadow(0 0 6px rgba(56, 189, 248, .95)); }
+        /* Draw the co-owner diamond as a CSS shape, not a blue emoji/glyph. */
+        .co-owner-diamond-shape {
+          display: block;
+          width: .68em;
+          height: .68em;
+          border: 1px solid #bae6fd;
+          border-radius: 2px;
+          background: linear-gradient(120deg, #075985 0%, #38bdf8 20%, #e0f7ff 38%, #0ea5e9 56%, #bae6fd 74%, #0369a1 90%, #38bdf8 100%);
           background-size: 260% 100%;
-          background-clip: text;
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent !important;
-          animation: goldNameMorph 2.8s linear infinite;
-          filter: drop-shadow(0 0 5px rgba(255, 190, 35, .65));
+          transform: rotate(45deg);
+          animation: diamondNameShine 2.8s linear infinite;
+          box-shadow: 0 0 7px rgba(56, 189, 248, .95), inset 0 0 2px rgba(255,255,255,.8);
         }
         @keyframes goldNameMorph { 0% { background-position: 0% center; } 100% { background-position: 260% center; } }
         .staff-name-color-grid { display:grid; grid-template-columns:repeat(6, minmax(34px, 44px)); gap:10px; margin:12px 0; }
@@ -3235,6 +3353,34 @@ function App() {
             padding: 12px;
           }
         }
+        /* Final Co-owner override: diamond-blue name, badge and glow. */
+        .member-role-tag.co_owner {
+          color: #082b4a !important;
+          -webkit-text-fill-color: #082b4a !important;
+          background: linear-gradient(110deg, #075985 0%, #38bdf8 18%, #e0f7ff 34%, #0ea5e9 52%, #bae6fd 70%, #0369a1 88%, #38bdf8 100%) !important;
+          background-size: 260% 100% !important;
+          border: 1px solid #bae6fd !important;
+          box-shadow: 0 0 8px rgba(56, 189, 248, .95), 0 0 16px rgba(14, 165, 233, .55), inset 0 1px 0 rgba(255,255,255,.72) !important;
+          animation: diamondBannerShine 3s linear infinite !important;
+          text-shadow: none !important;
+          filter: none !important;
+        }
+        .member-name.co-owner-name .member-display-name {
+          color: #38bdf8 !important;
+          background: linear-gradient(100deg, #075985 0%, #38bdf8 18%, #e0f7ff 34%, #0ea5e9 52%, #bae6fd 70%, #0369a1 88%, #38bdf8 100%) !important;
+          background-size: 260% auto !important;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          animation: diamondNameShine 3.4s linear infinite !important;
+          filter: drop-shadow(0 0 6px rgba(56, 189, 248, .95)) !important;
+        }
+        .member-name.co-owner-name .co-owner-diamond,
+        .member-name.co-owner-name .co-owner-diamond-shape {
+          filter: drop-shadow(0 0 7px rgba(56, 189, 248, 1)) !important;
+          box-shadow: 0 0 8px rgba(56, 189, 248, .95), inset 0 0 2px rgba(255,255,255,.8) !important;
+        }
+
       `}</style>
 
       <aside className="sidebar">
@@ -3336,7 +3482,7 @@ function App() {
 
           {session ? (
             <MemberName
-              person={{ display_name: profile?.display_name || session.user.email }}
+              person={{ display_name: profile?.display_name || session.user.email, username: profile?.username }}
               role={memberRoles[session.user.id] || staffRole}
             />
           ) : 'Guest'}
