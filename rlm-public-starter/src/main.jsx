@@ -50,7 +50,7 @@ function MemberName({ person, role, className = '', cosmetics = null }) {
       {isOwner && <span className="owner-crown" aria-label="Owner">👑</span>}
       {role === 'co_owner' && <span className="co-owner-diamond" aria-label="Co-owner" title="Co-owner">◆</span>}
       {cosmetics?.badge && <span className={`equipped-badge badge-${cosmetics.badge_style || ''}`} title={cosmetics.badge}>{cosmetics.badge === 'Star Badge' ? '⭐' : cosmetics.badge === 'Flame Badge' ? '🔥' : '💎'}</span>}
-      <span>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
+      <span className="member-display-name" style={cosmetics?.display_name_color ? { '--display-name-color': cosmetics.display_name_color } : undefined}>{person?.display_name || person?.username || '尺ḼⱮ member'}</span>
       {cosmetics?.name_tag && <span className={`equipped-name-tag tag-${cosmetics.name_tag_style || ''}`}>{cosmetics.name_tag}</span>}
       {cosmetics?.title && <span className={cosmetics.title.trim().toLowerCase() === 'clan creator' ? 'equipped-title clan-creator-title' : 'equipped-title'}>{cosmetics.title}</span>}
       {isStaff && (
@@ -134,19 +134,23 @@ function BlockBlastGame({ onRecordGame }) {
   const [score, setScore] = React.useState(0)
   const [over, setOver] = React.useState(false)
   const [round, setRound] = React.useState(0)
+  const [drag, setDrag] = React.useState(null)
+  const boardRef = React.useRef(null)
+  const wrapRef = React.useRef(null)
 
   function fits(board, shape, x, y) {
-    return shape.every(([dx, dy]) => x + dx < 10 && y + dy < 10 && !board[y + dy]?.[x + dx])
+    return shape.every(([dx, dy]) => x + dx >= 0 && y + dy >= 0 && x + dx < 10 && y + dy < 10 && !board[y + dy]?.[x + dx])
   }
   function canAnyFit(board, list) {
-    return list.some(index => BLOCK_SHAPES[index].some(([mx, my]) => {
+    return list.some(index => {
+      if (index == null) return false
       for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (fits(board, BLOCK_SHAPES[index], x, y)) return true
       return false
-    }))
+    })
   }
-  function place(x, y) {
-    if (over || pieces[selected] == null) return
-    const shape = BLOCK_SHAPES[pieces[selected]]
+  function place(x, y, pieceIndex = selected) {
+    if (over || pieces[pieceIndex] == null) return
+    const shape = BLOCK_SHAPES[pieces[pieceIndex]]
     if (!fits(grid, shape, x, y)) return
     const next = grid.map(row => [...row])
     shape.forEach(([dx, dy]) => { next[y + dy][x + dx] = true })
@@ -156,7 +160,7 @@ function BlockBlastGame({ onRecordGame }) {
     fullCols.forEach(col => { for (let row = 0; row < 10; row++) next[row][col] = false })
     const cleared = fullRows.length + fullCols.length
     const nextPieces = [...pieces]
-    nextPieces[selected] = null
+    nextPieces[pieceIndex] = null
     const nextScore = score + shape.length + cleared * 10 + Math.max(0, cleared - 1) * 5
     setGrid(next); setScore(nextScore)
     if (nextPieces.every(piece => piece == null)) {
@@ -170,8 +174,84 @@ function BlockBlastGame({ onRecordGame }) {
       else if (nextPieces[selected] == null) setSelected(nextPieces.findIndex(piece => piece != null))
     }
   }
-  function restart() { setGrid(empty()); setPieces([0,2,4]); setSelected(0); setScore(0); setOver(false); setRound(0) }
-  return <div className="panel game-panel arcade-game"><h3>🧩 Block Blast</h3><p className="muted">Choose a shape, then tap the board to place it. Complete full rows or columns to clear them.</p><div className="arcade-score">Score: {score}</div><div className="block-grid" role="grid" aria-label="Block Blast board">{grid.map((row,y) => row.map((filled,x) => <button key={`${x}-${y}`} aria-label={`Row ${y+1}, column ${x+1}`} className={`block-cell ${filled ? 'filled' : ''}`} onClick={() => place(x,y)} disabled={over || pieces[selected] == null} />))}</div><div className="piece-tray">{pieces.map((piece,i) => <button key={`${round}-${i}`} className={`piece-choice ${selected === i ? 'chosen' : ''}`} onClick={() => setSelected(i)} disabled={piece == null || over}>{piece == null ? '✓' : BLOCK_SHAPES[piece].map(([x,y]) => <i key={`${x}-${y}`} style={{ gridColumn:x+1, gridRow:y+1 }} />)}</button>)}</div>{over && <p className="game-over">No more moves — final score {score}</p>}<button className="secondary" onClick={restart}>New game</button></div>
+  function getCell(clientX, clientY, pieceIndex) {
+    const rect = boardRef.current?.getBoundingClientRect()
+    if (!rect) return null
+    const shape = BLOCK_SHAPES[pieces[pieceIndex]]
+    const maxX = Math.max(...shape.map(([x]) => x))
+    const maxY = Math.max(...shape.map(([,y]) => y))
+    const gap = 3, pad = 6
+    const cell = (rect.width - pad * 2 - gap * 9) / 10
+    const col = Math.floor((clientX - rect.left - pad) / (cell + gap)) - Math.floor((maxX + 1) / 2)
+    const row = Math.floor((clientY - rect.top - pad) / (cell + gap)) - Math.floor((maxY + 1) / 2)
+    return { x: col, y: row }
+  }
+  function updateDrag(event) {
+    if (!drag) return
+    const cell = getCell(event.clientX, event.clientY, drag.index)
+    if (!cell) return
+    const shape = BLOCK_SHAPES[pieces[drag.index]]
+    setDrag({ ...drag, ...cell, inside: event.clientX >= boardRef.current.getBoundingClientRect().left && event.clientX <= boardRef.current.getBoundingClientRect().right && event.clientY >= boardRef.current.getBoundingClientRect().top && event.clientY <= boardRef.current.getBoundingClientRect().bottom, valid: fits(grid, shape, cell.x, cell.y) })
+  }
+  function finishDrag() {
+    if (drag?.inside && drag.valid) place(drag.x, drag.y, drag.index)
+    setDrag(null)
+  }
+  function restart() { setGrid(empty()); setPieces([0,2,4]); setSelected(0); setScore(0); setOver(false); setRound(0); setDrag(null) }
+  const previewCells = new Set(drag?.inside && drag.valid ? BLOCK_SHAPES[pieces[drag.index]].map(([dx,dy]) => `${drag.x+dx}-${drag.y+dy}`) : [])
+  return <div className="panel game-panel arcade-game" ref={wrapRef} onPointerMove={updateDrag} onPointerUp={finishDrag} onPointerCancel={() => setDrag(null)}>
+    <h3>🧩 Block Blast</h3><p className="muted">Drag a shape onto the board. The glowing outline previews exactly where it will land. Clear full rows or columns.</p>
+    <div className="arcade-score">Score: {score}</div>
+    <div className="block-grid" ref={boardRef} role="grid" aria-label="Block Blast board">
+      {grid.map((row,y) => row.map((filled,x) => <button key={`${x}-${y}`} aria-label={`Row ${y+1}, column ${x+1}`} className={`block-cell ${filled ? 'filled' : ''} ${previewCells.has(`${x}-${y}`) ? 'block-preview' : ''}`} onClick={() => !drag && place(x,y)} disabled={over} />))}
+    </div>
+    <div className="piece-tray">{pieces.map((piece,i) => <button key={`${round}-${i}`} className={`piece-choice ${selected === i ? 'chosen' : ''}`} onClick={() => setSelected(i)} onPointerDown={event => { if (piece == null || over) return; event.preventDefault(); setSelected(i); setDrag({ index:i, x:-99, y:-99, inside:false, valid:false }); wrapRef.current?.setPointerCapture?.(event.pointerId) }} disabled={piece == null || over} aria-label={`Drag block shape ${i+1}`}>{piece == null ? '✓' : BLOCK_SHAPES[piece].map(([x,y]) => <i key={`${x}-${y}`} style={{ gridColumn:x+1, gridRow:y+1 }} />)}</button>)}</div>
+    {drag && <p className="block-drag-hint">{drag.inside ? (drag.valid ? '✓ Release to place' : 'That spot is blocked') : 'Drag onto the board'}</p>}
+    {over && <p className="game-over">No more moves — final score {score}</p>}<button className="secondary" onClick={restart}>New game</button>
+  </div>
+}
+
+const BUBBLE_COLORS = ['#f45b69','#4d96ff','#ffd166','#6bcB77','#b084f5']
+function BubbleShooterGame({ onRecordGame }) {
+  const freshBoard = () => Array.from({length:8},(_,r)=>Array.from({length:8},()=>r<4?Math.floor(Math.random()*BUBBLE_COLORS.length):null))
+  const [board,setBoard] = React.useState(freshBoard)
+  const [current,setCurrent] = React.useState(() => Math.floor(Math.random()*BUBBLE_COLORS.length))
+  const [next,setNext] = React.useState(() => Math.floor(Math.random()*BUBBLE_COLORS.length))
+  const [score,setScore] = React.useState(0)
+  const [shots,setShots] = React.useState(0)
+  const [aim,setAim] = React.useState(50)
+  const [busy,setBusy] = React.useState(false)
+  const [over,setOver] = React.useState(false)
+  const areaRef = React.useRef(null)
+  const timeoutRef = React.useRef(null)
+  React.useEffect(()=>()=>clearTimeout(timeoutRef.current),[])
+  function shoot(event) {
+    if(busy||over) return
+    const rect=areaRef.current.getBoundingClientRect()
+    const col=Math.max(0,Math.min(7,Math.floor(((event.clientX-rect.left)/rect.width)*8)))
+    setAim((col+.5)/8*100); setBusy(true)
+    const row=[...Array(8).keys()].reverse().find(r=>board[r][col]==null)
+    if(row==null){setBusy(false);setOver(true);onRecordGame('bubble-shooter');return}
+    const nextBoard=board.map(r=>[...r]); nextBoard[row][col]=current
+    const connected=[],stack=[[row,col]],seen=new Set()
+    while(stack.length){const [r,c]=stack.pop(),key=`${r},${c}`;if(seen.has(key))continue;seen.add(key);if(nextBoard[r]?.[c]!==current)continue;connected.push([r,c]);[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(([nr,nc])=>{if(nr>=0&&nr<8&&nc>=0&&nc<8&&!seen.has(`${nr},${nc}`))stack.push([nr,nc])})}
+    let gained=0
+    if(connected.length>=3){connected.forEach(([r,c])=>{nextBoard[r][c]=null});gained=connected.length*10}
+    const newScore=score+gained;setBoard(nextBoard);setScore(newScore);setShots(v=>v+1)
+    const isFull=nextBoard[0].some(Boolean)
+    timeoutRef.current=setTimeout(()=>{setCurrent(next);setNext(Math.floor(Math.random()*BUBBLE_COLORS.length));setBusy(false);if(isFull){setOver(true);onRecordGame('bubble-shooter')}},220)
+  }
+  function restart(){clearTimeout(timeoutRef.current);setBoard(freshBoard());setCurrent(Math.floor(Math.random()*BUBBLE_COLORS.length));setNext(Math.floor(Math.random()*BUBBLE_COLORS.length));setScore(0);setShots(0);setBusy(false);setOver(false)}
+  return <div className="panel game-panel arcade-game"><h3>🫧 Bubble Shooter</h3><p className="muted">Aim with your mouse or finger, then tap to shoot. Match 3 or more bubbles of the same colour to pop them.</p>
+    <div className="arcade-score"><span>Score: {score}</span><span>Shots: {shots}</span></div>
+    <div className="bubble-arena" ref={areaRef} onPointerMove={e=>{if(!busy&&!over){const r=areaRef.current.getBoundingClientRect();setAim(Math.max(4,Math.min(96,(e.clientX-r.left)/r.width*100)))} }} onPointerDown={shoot} role="button" tabIndex={0} aria-label="Aim and shoot bubbles">
+      <div className="bubble-board">{board.map((row,r)=>row.map((color,c)=><span key={`${r}-${c}`} className="bubble-slot">{color!=null&&<i className="bubble-ball" style={{background:BUBBLE_COLORS[color]}}/>}</span>))}</div>
+      <div className="bubble-aim" style={{left:`${aim}%`}} />
+      <div className="bubble-launcher"><i className="bubble-ball" style={{background:BUBBLE_COLORS[current]}}/><small>Next <i className="bubble-ball" style={{background:BUBBLE_COLORS[next]}}/></small></div>
+      {over&&<div className="bubble-over">Game over<br/><small>Final score: {score}</small></div>}
+    </div>
+    <p className="muted bubble-hint">Tip: aim at the same-colour clusters to clear space.</p><button className="secondary" onClick={restart}>New game</button>
+  </div>
 }
 
 function Game2048({ onRecordGame }) {
@@ -206,22 +286,95 @@ function Game2048({ onRecordGame }) {
 
 function FruitMergeGame({ onRecordGame }) {
   const fruits = ['🍒','🍓','🍇','🍊','🍋','🍎','🍐','🍑','🍍','🍉']
-  const [columns,setColumns] = React.useState(() => Array(5).fill(null).map(() => []))
+  const radius = [4.5,5.2,6,6.9,7.8,8.8,9.8,10.8,11.8,12.8]
+  const [pieces,setPieces] = React.useState([])
   const [next,setNext] = React.useState(0)
   const [score,setScore] = React.useState(0)
   const [over,setOver] = React.useState(false)
-  function drop(col) {
-    if (over || columns[col].length >= 6) { if (columns.every(c => c.length >= 6)) { setOver(true); onRecordGame('fruit-merge') } return }
-    const updated = columns.map(c => [...c]); let level = next; updated[col].push(level)
-    let gained = 0, changed = true
-    while (changed) { changed = false; const stack = updated[col]; if (stack.length >= 2 && stack[stack.length-1] === stack[stack.length-2] && stack[stack.length-1] < 9) { stack.splice(-2,2,stack[stack.length-1]+1); gained += 10*(stack[stack.length-1]+1); changed = true } }
-    setColumns(updated); setScore(s => s+gained); setNext(Math.floor(Math.random()*Math.min(5, fruits.length)))
-    if (updated.every(c => c.length >= 6)) { setOver(true); onRecordGame('fruit-merge') }
-  }
-  function restart() { setColumns(Array(5).fill(null).map(() => [])); setNext(0); setScore(0); setOver(false) }
-  return <div className="panel game-panel arcade-game"><h3>🍉 Fruit Merge</h3><p className="muted">Drop fruit into a column. Two matching fruits touching at the bottom merge into a bigger fruit.</p><div className="arcade-score">Score: {score} <span>Next: {fruits[next]}</span></div><div className="fruit-board">{columns.map((col,i) => <button key={i} className="fruit-column" onClick={() => drop(i)} disabled={over || col.length>=6}>{Array.from({length:6},(_,row) => { const fruit = col[5-row]; return <span key={row} className="fruit-cell">{fruit == null ? '' : fruits[fruit]}</span> })}</button>)}</div>{over && <p className="game-over">Board full — final score {score}</p>}<button className="secondary" onClick={restart}>New game</button></div>
-}
+  const [best,setBest] = React.useState(0)
+  const piecesRef = React.useRef(pieces); piecesRef.current = pieces
+  const idRef = React.useRef(0)
+  const cooldownRef = React.useRef(0)
+  const topFramesRef = React.useRef(0)
+  const overRef = React.useRef(false)
+  const scoreRef = React.useRef(0)
+  const arenaRef = React.useRef(null)
 
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      if (overRef.current) return
+      const current = piecesRef.current.map(p => ({...p, vy:Math.min(p.vy + 0.16, 2.1), x:p.x + p.vx, y:p.y + p.vy}))
+      // Keep fruit inside the walls and let it bounce gently off the floor.
+      current.forEach(p => {
+        const r = radius[p.level]
+        if (p.x < r) { p.x = r; p.vx = Math.abs(p.vx) * 0.45 }
+        if (p.x > 100-r) { p.x = 100-r; p.vx = -Math.abs(p.vx) * 0.45 }
+        if (p.y > 100-r) { p.y = 100-r; p.vy = -Math.abs(p.vy) * 0.22; p.vx *= 0.985 }
+      })
+      const removed = new Set(), additions = []
+      let gained = 0
+      for (let i=0;i<current.length;i++) {
+        if (removed.has(i)) continue
+        for (let j=i+1;j<current.length;j++) {
+          if (removed.has(j)) continue
+          const a=current[i], b=current[j], dx=(a.x-b.x)*0.78, dy=a.y-b.y
+          const minDist=radius[a.level]+radius[b.level]
+          const dist=Math.hypot(dx,dy)
+          if (dist >= minDist || dist === 0) continue
+          if (a.level === b.level && a.level < 9) {
+            removed.add(i); removed.add(j)
+            additions.push({id:++idRef.current,level:a.level+1,x:(a.x+b.x)/2,y:(a.y+b.y)/2,vx:(a.vx+b.vx)*0.25,vy:-0.7})
+            gained += (a.level+1)*10
+            break
+          }
+          // A small separation impulse keeps unlike fruits from overlapping.
+          const overlap=minDist-dist, nx=dx/dist, ny=dy/dist
+          a.x += nx*overlap*0.35/0.78; a.y += ny*overlap*0.35
+          b.x -= nx*overlap*0.35/0.78; b.y -= ny*overlap*0.35
+          const push=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny
+          if (push > 0) { a.vx -= push*nx*0.18; a.vy -= push*ny*0.18; b.vx += push*nx*0.18; b.vy += push*ny*0.18 }
+        }
+      }
+      const nextPieces=[...current.filter((_,i)=>!removed.has(i)),...additions]
+      // End the round if a fruit is trapped against the top for several ticks.
+      const danger=nextPieces.some(p => p.y-radius[p.level] < 2.5 && Math.abs(p.vy)<0.22)
+      topFramesRef.current = danger ? topFramesRef.current+1 : 0
+      if (topFramesRef.current > 90) {
+        overRef.current=true; setOver(true); onRecordGame('fruit-merge')
+      }
+      if (gained) { scoreRef.current += gained; setScore(scoreRef.current); setBest(v=>Math.max(v,scoreRef.current)) }
+      piecesRef.current=nextPieces; setPieces(nextPieces)
+      cooldownRef.current=Math.max(0,cooldownRef.current-1)
+    }, 30)
+    return () => clearInterval(timer)
+  }, [onRecordGame])
+
+  function drop(event) {
+    if (overRef.current || cooldownRef.current>0 || piecesRef.current.length>=55) return
+    const rect=arenaRef.current.getBoundingClientRect()
+    const x=Math.max(7,Math.min(93,((event.clientX-rect.left)/rect.width)*100))
+    const piece={id:++idRef.current,level:next,x,y:8,vx:0,vy:0.15}
+    const updated=[...piecesRef.current,piece]
+    piecesRef.current=updated; setPieces(updated)
+    setNext(Math.floor(Math.random()*5)); cooldownRef.current=12
+  }
+  function restart() {
+    piecesRef.current=[]; setPieces([]); setNext(Math.floor(Math.random()*5)); setScore(0); scoreRef.current=0
+    setOver(false); overRef.current=false; topFramesRef.current=0; cooldownRef.current=0
+  }
+  return <div className="panel game-panel arcade-game">
+    <h3>🍉 Fruit Merge</h3>
+    <p className="muted">Tap or click anywhere across the box to drop fruit. Matching fruits merge when they touch. Bigger merges earn more points!</p>
+    <div className="arcade-score"><span>Score: {score}</span><span>Next: {fruits[next]}</span><span>Best: {best}</span></div>
+    <div ref={arenaRef} className={`fruit-drop-arena ${over?'is-over':''}`} onClick={drop} role="button" tabIndex={0} aria-label="Fruit drop area. Click to drop the next fruit." onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const rect=arenaRef.current.getBoundingClientRect();drop({clientX:rect.left+rect.width/2})}}}>
+      <div className="fruit-drop-line" />
+      {pieces.map(p=><span key={p.id} className="free-fruit" style={{left:`${p.x}%`,top:`${p.y}%`,width:`${radius[p.level]*1.56}%`,height:`${radius[p.level]*2}%`,fontSize:`${Math.max(17,radius[p.level]*3.1)}px`}}>{fruits[p.level]}</span>)}
+      {over && <div className="fruit-game-over">Game over<br/>Final score: {score}</div>}
+    </div>
+    <p className="muted fruit-hint">Drop one fruit at a time • Combine matching fruit • Don't let the pile reach the top</p>
+    <button className="secondary" onClick={restart}>New game</button>
+  </div>
+}
 function SnakeGame({ onRecordGame }) {
   const [snake,setSnake] = React.useState([[5,5],[4,5],[3,5]])
   const [food,setFood] = React.useState([7,5])
@@ -251,11 +404,11 @@ function MiniGames({ onRecordGame }) {
   function resetBoard(){setBoard(Array(9).fill(''));setRoundMessage('You are X. Try to beat the computer.')}
   function startReaction(){clearTimeout(timerRef.current);setReactionResult('Wait for GO…');setReactionPhase('waiting');timerRef.current=setTimeout(()=>{setReactionStart(Date.now());setReactionPhase('go');setReactionResult('GO! Click the button!')},1200+Math.floor(Math.random()*1800))}
   function hitReaction(){if(reactionPhase==='waiting'){clearTimeout(timerRef.current);setReactionPhase('idle');setReactionResult('Too early! Press Start and try again.')}else if(reactionPhase==='go'){const ms=Date.now()-reactionStart;setReactionPhase('idle');setReactionResult(`Your reaction time: ${ms} ms`);onRecordGame('reaction')}}
-  const tabs=[['tic-tac-toe','⭕ Tic-tac-toe'],['reaction','⚡ Reaction test'],['block','🧩 Block Blast'],['2048','🔢 2048'],['fruit','🍉 Fruit Merge'],['snake','🐍 Snake']]
+  const tabs=[['tic-tac-toe','⭕ Tic-tac-toe'],['reaction','⚡ Reaction test'],['block','🧩 Block Blast'],['2048','🔢 2048'],['fruit','🍉 Fruit Merge'],['snake','🐍 Snake'],['bubble','🫧 Bubble Shooter']]
   return <div className="minigames-wrap"><div className="game-tabs">{tabs.map(([id,label])=><button key={id} className={game===id?'primary':'secondary'} onClick={()=>setGame(id)}>{label}</button>)}</div>
     {game==='tic-tac-toe'&&<div className="panel game-panel"><h3>⭕ Tic-tac-toe</h3><p className="muted">Play as X against the computer. A completed round counts toward your daily game quests.</p><div className="tic-board">{board.map((cell,index)=><button key={index} className="tic-cell" onClick={()=>playCell(index)} disabled={Boolean(cell)||Boolean(winnerOf(board))}>{cell}</button>)}</div><p>{roundMessage}</p><button className="secondary" onClick={resetBoard}>New round</button></div>}
     {game==='reaction'&&<div className="panel game-panel"><h3>⚡ Reaction test</h3><p className="muted">Press Start, wait for GO, then click as quickly as you can. Clicking early cancels the round.</p><div className="reaction-display">{reactionResult||'Ready when you are'}</div>{reactionPhase==='idle'?<button className="primary" onClick={startReaction}>Start</button>:<button className="primary" onClick={hitReaction}>{reactionPhase==='waiting'?'Wait…':'CLICK!'}</button>}</div>}
-    {game==='block'&&<BlockBlastGame onRecordGame={onRecordGame}/>}{game==='2048'&&<Game2048 onRecordGame={onRecordGame}/>}{game==='fruit'&&<FruitMergeGame onRecordGame={onRecordGame}/>}{game==='snake'&&<SnakeGame onRecordGame={onRecordGame}/>}
+    {game==='block'&&<BlockBlastGame onRecordGame={onRecordGame}/>}{game==='2048'&&<Game2048 onRecordGame={onRecordGame}/>}{game==='fruit'&&<FruitMergeGame onRecordGame={onRecordGame}/>}{game==='snake'&&<SnakeGame onRecordGame={onRecordGame}/>}{game==='bubble'&&<BubbleShooterGame onRecordGame={onRecordGame}/>}
   </div>
 }
 function App() {
@@ -289,6 +442,8 @@ function App() {
   const [memberCosmetics, setMemberCosmetics] = React.useState({})
   const [selectedStaffNameColor, setSelectedStaffNameColor] = React.useState('#38bdf8')
   const [savingStaffNameColor, setSavingStaffNameColor] = React.useState(false)
+  const [selectedDisplayNameColor, setSelectedDisplayNameColor] = React.useState('#f8fafc')
+  const [savingDisplayNameColor, setSavingDisplayNameColor] = React.useState(false)
   const [progressData, setProgressData] = React.useState(null)
   const [progressLoading, setProgressLoading] = React.useState(false)
   const [progressBusy, setProgressBusy] = React.useState(false)
@@ -551,18 +706,25 @@ function App() {
     let cancelled = false
     async function loadCosmetics() {
       if (!session || !supabase) { setMemberCosmetics({}); return }
-      const [{ data, error }, { data: roleColors, error: colorError }] = await Promise.all([
+      const [{ data, error }, { data: roleColors, error: colorError }, { data: displayColors, error: displayColorError }] = await Promise.all([
         supabase.rpc('rlm_get_public_member_cosmetics'),
-        supabase.rpc('rlm_get_public_staff_name_colors')
+        supabase.rpc('rlm_get_public_staff_name_colors'),
+        supabase.rpc('rlm_get_public_display_name_colors')
       ])
       if (cancelled) return
       if (error) { setStatus('Could not load member cosmetics: ' + error.message); return }
       if (colorError) { setStatus('Could not load staff name colours. Run the staff name colour migration.'); }
+      if (displayColorError) { setStatus('Could not load display name colours. Run the display name colour migration.'); }
       const cosmeticsByUser = Object.fromEntries((data || []).map(row => [row.user_id, row]))
       ;(roleColors || []).forEach(row => {
         cosmeticsByUser[row.user_id] = { ...(cosmeticsByUser[row.user_id] || {}), staff_name_color: row.color }
       })
+      ;(displayColors || []).forEach(row => {
+        cosmeticsByUser[row.user_id] = { ...(cosmeticsByUser[row.user_id] || {}), display_name_color: row.color }
+      })
       setMemberCosmetics(cosmeticsByUser)
+      const myDisplayColor = (displayColors || []).find(row => row.user_id === session.user.id)?.color
+      if (myDisplayColor && STAFF_NAME_COLORS.includes(myDisplayColor)) setSelectedDisplayNameColor(myDisplayColor)
       const myColor = (roleColors || []).find(row => row.user_id === session.user.id)?.color
       if (myColor && STAFF_NAME_COLORS.includes(myColor)) setSelectedStaffNameColor(myColor)
     }
@@ -649,6 +811,20 @@ function App() {
       setStatus('Cosmetic equipped!')
     }
     setProgressBusy(false)
+  }
+
+  async function saveDisplayNameColor(color) {
+    if (!STAFF_NAME_COLORS.includes(color) || !supabase || !session?.user?.id) return
+    setSelectedDisplayNameColor(color)
+    setSavingDisplayNameColor(true)
+    const { error } = await supabase.rpc('rlm_set_my_display_name_color', { p_color: color })
+    if (error) {
+      setStatus('Could not save your display name colour: ' + error.message + '. Run the display name colour migration first.')
+    } else {
+      setMemberCosmetics(current => ({ ...current, [session.user.id]: { ...(current[session.user.id] || {}), display_name_color: color } }))
+      setStatus('Your display name colour has been updated.')
+    }
+    setSavingDisplayNameColor(false)
   }
 
   async function saveStaffNameColor(color) {
@@ -2652,6 +2828,17 @@ function App() {
               </p>
               <p><strong>尺ḼⱮ role:</strong> {staffRole}</p>
 
+              <section className="profile-staff-colour-section">
+                <h3>Display name colour</h3>
+                <p className="muted">Choose the colour of your actual display name. This changes the name text wherever it appears, not your role tag.</p>
+                <div className="staff-name-color-grid" aria-label="Choose display name colour">
+                  {STAFF_NAME_COLORS.map(color => (
+                    <button key={color} type="button" className={`staff-name-color-swatch${selectedDisplayNameColor === color ? ' selected' : ''}`} style={{ '--swatch-color': color }} aria-label={`Choose display name colour ${color}`} aria-pressed={selectedDisplayNameColor === color} disabled={savingDisplayNameColor} onClick={() => saveDisplayNameColor(color)} />
+                  ))}
+                </div>
+                <div className="staff-name-color-preview">Preview: <span className="member-display-name" style={{ '--display-name-color': selectedDisplayNameColor }}>Your display name</span></div>
+              </section>
+
               {['owner', 'co_owner', 'admin'].includes(staffRole) && (
                 <section className="profile-staff-colour-section">
                   <h3>Staff name tag colour</h3>
@@ -2713,6 +2900,8 @@ function App() {
           gap: 5px;
           font-weight: 650;
         }
+
+        .member-display-name { color: var(--display-name-color, inherit) !important; -webkit-text-fill-color: var(--display-name-color, currentColor) !important; background: none !important; filter: none; text-shadow: none; }
 
         .owner-name {
           color: #ffd447 !important;
@@ -2839,13 +3028,35 @@ function App() {
         .piece-choice { display:grid; grid-template-columns:repeat(4,17px); grid-template-rows:repeat(4,17px); gap:2px; min-width:92px; min-height:82px; place-content:center; border:1px solid #514663; border-radius:10px; background:#211b30; }
         .piece-choice.chosen { outline:2px solid #b69aff; }
         .piece-choice i { width:17px; height:17px; background:#9b75ff; border-radius:3px; }
+        .block-grid { touch-action:none; }
+        .block-cell.block-preview { background:rgba(115,255,191,.32); border:2px solid #8dffd0; box-shadow:inset 0 0 0 1px rgba(255,255,255,.55),0 0 10px rgba(93,255,190,.45); }
+        .piece-choice { touch-action:none; cursor:grab; }
+        .piece-choice:active { cursor:grabbing; }
+        .block-drag-hint { min-height:1.3em; color:#9dffd0 !important; font-weight:800; }
+        .bubble-arena { position:relative; width:min(100%,390px); margin:14px auto; aspect-ratio:0.82; overflow:hidden; border:3px solid #536b91; border-radius:18px; background:radial-gradient(ellipse at 50% 0%,#304e78,#101a32 72%); touch-action:pan-y; cursor:crosshair; user-select:none; }
+        .bubble-board { position:absolute; inset:12px 8px 74px; display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); grid-template-rows:repeat(8,minmax(0,1fr)); gap:3px; }
+        .bubble-slot { display:grid; place-items:center; min-width:0; min-height:0; }
+        .bubble-ball { display:block; width:88%; aspect-ratio:1; border-radius:50%; border:2px solid rgba(255,255,255,.48); box-shadow:inset -5px -6px 8px rgba(0,0,0,.2),inset 3px 3px 5px rgba(255,255,255,.45),0 2px 4px rgba(0,0,0,.25); }
+        .bubble-aim { position:absolute; bottom:64px; left:50%; height:42%; border-left:2px dashed rgba(255,255,255,.72); transform:translateX(-50%); pointer-events:none; }
+        .bubble-launcher { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:64px; height:64px; border-radius:50%; background:#263b5b; border:2px solid #8ca7cc; display:grid; place-items:center; }
+        .bubble-launcher>.bubble-ball { width:42px; }
+        .bubble-launcher small { position:absolute; left:70px; bottom:4px; display:flex; align-items:center; gap:5px; color:#fff; white-space:nowrap; }
+        .bubble-launcher small .bubble-ball { width:22px; }
+        .bubble-over { position:absolute; inset:0; display:grid; place-content:center; gap:8px; color:white; background:rgba(7,12,25,.78); font-size:1.6rem; font-weight:900; }
+        .bubble-over small { font-size:1rem; }
+        .bubble-hint { font-size:.85rem; }
+
         .number-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; width:min(100%,390px); aspect-ratio:1; margin:14px auto; padding:8px; background:#554b40; border-radius:12px; }
         .number-tile { display:grid; place-items:center; border-radius:7px; background:#756b60; color:#fff; font-size:clamp(1rem,5vw,1.7rem); font-weight:850; }
         .tile-2 { background:#eee4da; color:#554b40; } .tile-4 { background:#ede0c8; color:#554b40; } .tile-8 { background:#f2b179; } .tile-16 { background:#f59563; } .tile-32 { background:#f67c5f; } .tile-64 { background:#f65e3b; } .tile-128,.tile-256,.tile-512 { background:#edcf72; color:#51452e; } .tile-1024,.tile-2048 { background:#edc53f; color:#51452e; }
         .direction-pad { display:grid; justify-content:center; gap:5px; margin:10px; } .direction-pad div { display:flex; justify-content:center; gap:5px; } .direction-pad button { min-width:46px; min-height:38px; border-radius:8px; }
-        .fruit-board { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; width:min(100%,430px); margin:14px auto; padding:7px; background:#30283d; border-radius:12px; }
-        .fruit-column { display:flex; flex-direction:column; gap:4px; min-width:0; padding:4px; border:1px solid #514663; border-radius:8px; background:#211b30; }
-        .fruit-cell { display:grid; place-items:center; aspect-ratio:1; font-size:clamp(1.1rem,5vw,1.8rem); background:#342b43; border-radius:6px; }
+        .fruit-drop-arena { position:relative; isolation:isolate; overflow:hidden; width:min(100%,360px); aspect-ratio:0.78; margin:14px auto; border:3px solid #a87946; border-top:0; border-radius:0 0 22px 22px; background:linear-gradient(180deg,#ffe5ad 0%,#ffdfa0 62%,#f4c77c 100%); box-shadow:inset 0 0 0 2px rgba(255,255,255,.22), inset 0 -12px 24px rgba(132,77,30,.12); cursor:crosshair; touch-action:manipulation; }
+        .fruit-drop-arena:before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.22; background:repeating-linear-gradient(90deg,transparent 0 23px,rgba(180,112,49,.22) 24px 25px); }
+        .fruit-drop-line { position:absolute; z-index:1; top:3%; left:0; right:0; border-top:2px dashed rgba(190,75,48,.5); pointer-events:none; }
+        .free-fruit { position:absolute; z-index:2; display:grid; place-items:center; transform:translate(-50%,-50%); line-height:1; border-radius:50%; filter:drop-shadow(1px 3px 2px rgba(75,42,19,.28)); user-select:none; pointer-events:none; }
+        .fruit-drop-arena.is-over { cursor:default; }
+        .fruit-game-over { position:absolute; z-index:5; inset:0; display:grid; place-content:center; gap:8px; background:rgba(34,20,17,.72); color:#fff; font-size:1.4rem; font-weight:900; text-shadow:0 2px 5px #000; }
+        .fruit-hint { font-size:.85rem; }
         .snake-board { display:grid; grid-template-columns:repeat(12,1fr); gap:2px; width:min(100%,420px); aspect-ratio:1; margin:14px auto; padding:6px; border-radius:10px; background:#283b35; }
         .snake-cell { background:#b8d7a6; border-radius:2px; } .snake-cell.snake-body { background:#328b59; } .snake-cell.snake-head { background:#146b3b; outline:2px solid #a7f3c2; } .snake-cell.snake-food { background:#f3d36b; border-radius:50%; }
         .game-over { color:#ff9b9b !important; font-weight:800; } .game-win { color:#9ce9b5 !important; font-weight:800; }
