@@ -3516,7 +3516,6 @@ function App() {
           box-shadow: 0 0 8px rgba(56, 189, 248, .95), inset 0 0 2px rgba(255,255,255,.8) !important;
         }
 
-      `}
         /* Final priority override: visible moving light streak on both staff names. */
         .member-name.owner-name .member-display-name {
           background-image: linear-gradient(105deg,
@@ -3550,7 +3549,7 @@ function App() {
           from { background-position: 150% center; }
           to { background-position: -150% center; }
         }
-</style>
+      `}</style>
 
       <aside className="sidebar">
         <div className="brand">尺ḼⱮ<span>.</span></div>
