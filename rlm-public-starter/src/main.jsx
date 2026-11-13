@@ -3558,6 +3558,47 @@ function App() {
           to { background-position: 0% 0; }
         }
 
+
+        /* Final override: a bright highlight wave travels across the entire name, left to right. */
+        .member-name.owner-name .member-display-name,
+        .member-name.co-owner-name .member-display-name {
+          display: inline-block !important;
+          background-size: 250% 100% !important;
+          background-repeat: no-repeat !important;
+          background-clip: text !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          background-position: 200% 0 !important;
+          animation-duration: 1.8s !important;
+          animation-timing-function: linear !important;
+          animation-iteration-count: infinite !important;
+          animation-direction: normal !important;
+        }
+        .member-name.owner-name .member-display-name {
+          background-image: linear-gradient(110deg,
+            #9b6500 0%, #f6cf58 34%, #ffe9a0 42%,
+            #ffffff 48%, #fff9df 51%, #ffe9a0 56%,
+            #d99a16 64%, #b77908 78%, #f6cf58 100%) !important;
+          animation-name: rlmOwnerWaveLeftToRight !important;
+          filter: drop-shadow(0 0 5px rgba(255, 205, 70, .95)) !important;
+        }
+        .member-name.co-owner-name .member-display-name {
+          background-image: linear-gradient(110deg,
+            #075985 0%, #38bdf8 34%, #a5e8ff 42%,
+            #ffffff 48%, #f2fcff 51%, #a5e8ff 56%,
+            #0ea5e9 64%, #0369a1 78%, #38bdf8 100%) !important;
+          animation-name: rlmCoOwnerWaveLeftToRight !important;
+          filter: drop-shadow(0 0 6px rgba(56, 189, 248, 1)) !important;
+        }
+        @keyframes rlmOwnerWaveLeftToRight {
+          from { background-position: 200% 0; }
+          to { background-position: -200% 0; }
+        }
+        @keyframes rlmCoOwnerWaveLeftToRight {
+          from { background-position: 200% 0; }
+          to { background-position: -200% 0; }
+        }
+
       `}</style>
 
       <aside className="sidebar">
