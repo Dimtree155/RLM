@@ -3559,44 +3559,51 @@ function App() {
         }
 
 
-        /* Final override: a bright highlight wave travels across the entire name, left to right. */
+        /* Crisp left-to-right light wave: the base colour stays still,
+           while a separate narrow highlight layer sweeps across the letters. */
         .member-name.owner-name .member-display-name,
         .member-name.co-owner-name .member-display-name {
           display: inline-block !important;
-          background-size: 250% 100% !important;
           background-repeat: no-repeat !important;
           background-clip: text !important;
           -webkit-background-clip: text !important;
           -webkit-text-fill-color: transparent !important;
-          background-position: 200% 0 !important;
-          animation-duration: 1.8s !important;
+          text-shadow: none !important;
+          filter: none !important;
+          animation-duration: 1.65s !important;
           animation-timing-function: linear !important;
           animation-iteration-count: infinite !important;
-          animation-direction: normal !important;
+          animation-fill-mode: both !important;
         }
         .member-name.owner-name .member-display-name {
-          background-image: linear-gradient(110deg,
-            #9b6500 0%, #f6cf58 34%, #ffe9a0 42%,
-            #ffffff 48%, #fff9df 51%, #ffe9a0 56%,
-            #d99a16 64%, #b77908 78%, #f6cf58 100%) !important;
+          background-image:
+            linear-gradient(110deg, transparent 43%, rgba(255,255,255,.55) 47%, #ffffff 50%, rgba(255,255,255,.65) 53%, transparent 57%),
+            linear-gradient(90deg, #9b6500 0%, #f6cf58 35%, #ffe9a0 55%, #d99a16 78%, #b77908 100%) !important;
+          background-size: 240% 100%, 100% 100% !important;
+          background-position: 100% 0, 0 0 !important;
           animation-name: rlmOwnerWaveLeftToRight !important;
-          filter: drop-shadow(0 0 5px rgba(255, 205, 70, .95)) !important;
         }
         .member-name.co-owner-name .member-display-name {
-          background-image: linear-gradient(110deg,
-            #075985 0%, #38bdf8 34%, #a5e8ff 42%,
-            #ffffff 48%, #f2fcff 51%, #a5e8ff 56%,
-            #0ea5e9 64%, #0369a1 78%, #38bdf8 100%) !important;
+          background-image:
+            linear-gradient(110deg, transparent 43%, rgba(255,255,255,.65) 47%, #ffffff 50%, rgba(255,255,255,.75) 53%, transparent 57%),
+            linear-gradient(90deg, #075985 0%, #38bdf8 35%, #a5e8ff 55%, #0ea5e9 78%, #0369a1 100%) !important;
+          background-size: 240% 100%, 100% 100% !important;
+          background-position: 100% 0, 0 0 !important;
           animation-name: rlmCoOwnerWaveLeftToRight !important;
-          filter: drop-shadow(0 0 6px rgba(56, 189, 248, 1)) !important;
         }
         @keyframes rlmOwnerWaveLeftToRight {
-          from { background-position: 200% 0; }
-          to { background-position: -200% 0; }
+          from { background-position: 100% 0, 0 0; }
+          to { background-position: 0% 0, 0 0; }
         }
         @keyframes rlmCoOwnerWaveLeftToRight {
-          from { background-position: 200% 0; }
-          to { background-position: -200% 0; }
+          from { background-position: 100% 0, 0 0; }
+          to { background-position: 0% 0, 0 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .member-name.owner-name .member-display-name,
+          .member-name.co-owner-name .member-display-name {
+            animation: none !important;
+          }
         }
 
       `}</style>
